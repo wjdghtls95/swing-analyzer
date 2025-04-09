@@ -1,0 +1,53 @@
+# 🐍 Python 기본
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+.Python
+
+# 📦 패키지 관리
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# 📁 IDE, Editor 관련 (PyCharm 포함)
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# 📄 로그, 임시파일
+*.log
+*.tmp
+*.swp
+*.DS_Store
+Thumbs.db
+
+# 🧪 테스트 관련
+htmlcov/
+.tox/
+.coverage
+coverage.xml
+.pytest_cache/
+
+# 🚀 빌드 관련
+build/
+dist/
+*.spec
+
+# 📂 Jupyter Notebook 캐시
+.ipynb_checkpoints/
+
+# 📷 Mediapipe 출력 이미지 또는 분석 결과 저장할 경우
+output/
+results/
+frames/
+
+# 📹 영상 데이터 폴더 (원하면 제외)
+data/
