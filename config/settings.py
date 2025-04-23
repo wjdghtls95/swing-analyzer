@@ -1,12 +1,12 @@
 import os
 from dotenv import load_dotenv
 
+# ENV 환경 변수를 기준으로 알맞은 .env 파일 로드
 env = os.getenv("ENV", "test")
-dotenv_path = f".env.{env}"
-load_dotenv(dotenv_path)
+load_dotenv(dotenv_path=f".env.{env}")
 
 class Settings:
-    PORT = int(os.getenv("FASTAPI_PORT", 8000))
-    DEBUG = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    PORT: int = int(os.getenv("FASTAPI_PORT", 8000))
+    DEBUG: bool = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
 settings = Settings()

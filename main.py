@@ -1,25 +1,32 @@
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+from analyze.router import router as analyze_router
 from config.settings import settings
 
+app = FastAPI(debug=settings.DEBUG)
 
-app = FastAPI()
-
-
-@app.get('/')
+@app.get("/")
 def root():
-    print('debugging check')
     return {"message": "hello world"}
 
-@app.get('/test')
-def root():
-    return {"message": "test"}
+@app.get("/health", tags=["Health Check"])
+def health_check():
+    return {"status": "ok"}
+
+app.include_router(analyze_router, prefix="/analyze")
+
+app.openapi = lambda: get_openapi(
+    title="AI Swing Analysis API",
+    version="1.0.0",
+    description="AI 골프 스윙 분석 API",
+    routes=app.routes,
+)
 
 if __name__ == "__main__":
     import uvicorn
 
-    # settings.PORT는 .env.{ENV}에서 불러온 값
     uvicorn.run(
-        "main:app",  # 파일이름:FastAPI 인스턴스명
+        "main:app",
         host="0.0.0.0",
         port=settings.PORT,
         reload=True
