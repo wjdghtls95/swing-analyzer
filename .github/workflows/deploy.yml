@@ -1,0 +1,38 @@
+name: Deploy Swing Analyzer
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Add EC2 to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Set up SSH Key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Upload .env and deploy
+        run: |
+          echo "${{ secrets.SWING_ANALYZER_ENV }}" > .swing-analyzer.dev.env
+          scp -i key.pem .swing-analyzer.dev.env ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:/home/ec2-user/app/.swing-analyzer.dev.env
+          ssh -i key.pem ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+            cd /home/ec2-user/app
+            git pull origin main
+            docker compose down || true
+            docker compose up -d --build
+          EOF
+
+      - name: Clean up
+        if: always()
+        run: rm -f key.pem

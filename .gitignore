@@ -52,3 +52,6 @@ frames/
 # 📹 영상 데이터 폴더 (원하면 제외)
 data/
 uploads
+
+# environment
+.env.dev
