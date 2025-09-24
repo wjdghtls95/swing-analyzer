@@ -36,9 +36,12 @@ htmlcov/
 coverage.xml
 .pytest_cache/
 
-# 🚀 빌드 관련
+# 🚀 빌드 & 로그 관련
 build/
 dist/
+logs/
+downloads/
+normalized/
 *.spec
 
 # 📂 Jupyter Notebook 캐시
@@ -54,4 +57,7 @@ data/
 uploads
 
 # environment
-.env.dev
+.env
+.env.test
+.env.*
+!.env.example
