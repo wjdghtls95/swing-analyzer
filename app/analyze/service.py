@@ -4,15 +4,21 @@
 - thresholds.json 룰을 적용해 diagnosis(다항목)를 만들고, logs에 함께 저장 → ML/튜닝 준비.
 - 향후 /analyze/full 엔드포인트를 열면 같은 풀데이터를 즉시 노출 가능(확장성).
 """
-
-import os, shutil, uuid, time, json, requests
+import os, shutil, uuid, time, json, requests, logging
 from pathlib import Path
+from fastapi import HTTPException
 from app.analyze.extractor import PoseExtractor
 from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle  # ← 무릎 함수 사용
 from app.analyze.feedback import generate_feedback
 from app.analyze.schema import AnalyzeResponse, NormMode
 from app.config.settings import settings
 from app.analyze.preprocess import normalize_video, normalize_video_pro
+
+# ---------- 로거 ----------
+logger = logging.getLogger(__name__)
+if not logging.getLogger().handlers:
+    # 글로벌 로거가 설정 안되어 있으면 기본 설정 (운영에서 uvicorn 로거가 대체)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # ---------- 내부 로깅 디렉토리 ----------
 _LOG_DIR = os.path.join("logs")
@@ -48,7 +54,7 @@ def _load_thresholds():
             if isinstance(data, dict):
                 merged.update(data)
         except Exception as e:
-            print(f"[THRESH] failed to load base {base}: {e}")
+            logger.warning(f"[THRESH] failed to load base {base}: {e}")
 
     # 2) env override
     if env:
@@ -61,19 +67,22 @@ def _load_thresholds():
                 if isinstance(data, dict):
                     merged.update(data)
             except Exception as e:
-                print(f"[THRESH] failed to load env {envf}: {e}")
+                logger.warning(f"[THRESH] failed to load env {envf}: {e}")
 
-    print(f"[THRESH] searched: {tried}")
-    print(f"[THRESH] loaded keys: {list(merged.keys())}")
+    logger.info(f"[THRESH] searched: {tried}")
+    logger.info(f"[THRESH] loaded keys: {list(merged.keys())}")
+
     return merged
 
 
 _THRESH = _load_thresholds()
+if not _THRESH:
+    logger.warning("[THRESH] WARNING: no thresholds loaded. diagnosis may be empty.")
 
 # metric → diagnosis 키 매핑(사람이 읽기 쉬운 키)
 _DIAG_KEY_MAP = {
-    "elbow_avg": "elbowDiag",
-    "knee_avg":  "kneeDiag",
+    "elbow_avg": "elbow_diag",
+    "knee_avg":  "knee_diag",
 }
 
 # 파일 키 ↔ 메트릭 키 alias (철자 혼용 방지 보완)
@@ -106,7 +115,7 @@ def _apply_bins_metrics_dict(metrics: dict) -> dict:
                     break
         if not spec:
             # 디버깅 도움 로그(원치 않으면 지워도 됨)
-            print(f"[THRESH] no rule for '{metric_name}' (available keys={list(_THRESH.keys())})")
+            logger.debug(f"[THRESH] no rule for '{metric_name}' (available keys={list(_THRESH.keys())})")
             continue
 
         for b in spec.get("bins", []):
@@ -162,6 +171,7 @@ def _do_preprocess(src_path: str, mode: NormMode):
 # ---------- 메인 파이프라인 ----------
 def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
                   norm_mode: NormMode = NormMode.auto) -> dict:
+
     """
     엔드투엔드 분석 파이프라인(B안):
       1) 전처리(코덱/해상도/FPS 표준화)
@@ -172,13 +182,21 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
       6) 내부 로깅(full_result) 저장 → 최종 응답은 요약만 반환
     """
     # 1) 전처리
-    norm_path, used_mode, preprocess_ms = _do_preprocess(file_path, norm_mode)
+    try:
+        norm_path, used_mode, preprocess_ms = _do_preprocess(file_path, norm_mode)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=422, detail=f"Input not found: {e}")
+    except RuntimeError as e:
+        # ffmpeg/ffprobe not found 등 커맨드 실패
+        raise HTTPException(status_code=500, detail=f"Preprocess failed: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
     # 2) 포즈 추출
     extractor = PoseExtractor(step=getattr(settings, "POSE_FRAME_STEP", 3))
     landmarks_np, landmarks, total_seen = extractor.extract_from_video(norm_path)
 
-    # 3) 메트릭 계산(평균값; 이후 P4/P7 등 구간값 확장 가능)
+    # 3) 메트릭 계산 (평균값 이후 P4/P7 등 구간값 확장 가능)
     elbow_angle = calculate_elbow_angle(landmarks, side=side, min_vis=min_vis)
     knee_angle  = calculate_knee_angle(landmarks,  side=side, min_vis=min_vis)
 
@@ -187,12 +205,12 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
         "knee_avg":  float(knee_angle)  if knee_angle  == knee_angle  else float("nan"),
     }
 
-    # 4) 요약 메시지(팔꿈치 단일) + JSON 룰로 다항목 진단
+    # 4) 요약 메시지 (팔꿈치 단일) + JSON 룰로 다항목 진단
     elbow_feedback = generate_feedback(elbow_angle)
     diagnosis = _apply_bins_metrics_dict(metrics)
 
-    if elbow_feedback and 'elbowDiag' not in diagnosis:
-        diagnosis['elbowDiag'] = elbow_feedback
+    if elbow_feedback and 'elbow_diag' not in diagnosis:
+        diagnosis['elbow_diag'] = elbow_feedback
 
     # 5) 검출률 계산
     detected = len(landmarks)           # 검출 성공 프레임 수
@@ -219,9 +237,8 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
         log_path = os.path.join(_LOG_DIR, f"{swing_id}_{uuid.uuid4().hex[:6]}.json")
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(full_result, f, ensure_ascii=False, indent=2)
-    except Exception:
-        # 로깅 실패는 사용자 응답 품질에 영향을 주지 않도록 무시
-        pass
+    except Exception as e:
+        logger.debug(f"[LOG] write failed: {e}")
 
     # 7) 최종 응답
     return full_result
@@ -238,4 +255,5 @@ def analyze_from_url(s3_url: str, side: str = "right", min_vis: float = 0.5,
         r.raise_for_status()
         with open(filename, "wb") as f:
             shutil.copyfileobj(r.raw, f)
+            
     return analyze_swing(filename, side=side, min_vis=min_vis, norm_mode=norm_mode)
