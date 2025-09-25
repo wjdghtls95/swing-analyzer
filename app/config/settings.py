@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+from app.analyze.constants import DEFAULT_VIDEO_FPS, DEFAULT_VIDEO_HEIGHT, DEFAULT_VIDEO_MIRROR
 
 # ─────────────────────────────────────────────────────────
 # 1) .env 로딩 전략 (실행 환경에 따라 자동 선택)
@@ -39,9 +40,9 @@ class Settings:
     OUTPUT_DIR: Path  = _env_path("OUTPUT_DIR",  ROOT / "data" / "output")
 
     # ── Video Normalize Params ────────────────────────────
-    VIDEO_FPS: int = int(os.getenv("VIDEO_FPS", 30))
-    VIDEO_HEIGHT: int = int(os.getenv("VIDEO_HEIGHT", 720))
-    VIDEO_MIRROR: bool = _env_bool("VIDEO_MIRROR", False)  # 좌/우타, 카메라 각 보정시
+    VIDEO_FPS: int = int(os.getenv("VIDEO_FPS", DEFAULT_VIDEO_FPS))
+    VIDEO_HEIGHT: int = int(os.getenv("VIDEO_HEIGHT", DEFAULT_VIDEO_HEIGHT))
+    VIDEO_MIRROR: bool = _env_bool("VIDEO_MIRROR", DEFAULT_VIDEO_MIRROR) == ' true'  # 좌/우타, 카메라 각 보정시
 
     # ── (옵션) 외부 연동/스토리지/DB/큐 등 ───────────────
     # DATABASE_URL: str | None = os.getenv("DATABASE_URL")

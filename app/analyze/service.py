@@ -7,10 +7,12 @@
 import os, shutil, uuid, time, json, requests, logging
 from pathlib import Path
 from fastapi import HTTPException
+
+from app.analyze.constants import DIAG_KEY_MAP, ALIAS
 from app.analyze.extractor import PoseExtractor
 from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle  # ← 무릎 함수 사용
 from app.analyze.feedback import generate_feedback
-from app.analyze.schema import AnalyzeResponse, NormMode
+from app.analyze.schema import NormMode
 from app.config.settings import settings
 from app.analyze.preprocess import normalize_video, normalize_video_pro
 
@@ -25,7 +27,7 @@ _LOG_DIR = os.path.join("logs")
 os.makedirs(_LOG_DIR, exist_ok=True)
 
 # ---------- thresholds 로더 ----------
-def _load_thresholds():
+def _load_thresholds() -> dict:
     """
     왜 분리했나?
     - 코드와 임계치/문구 정책을 분리해서 배포 없이 운영 튜닝을 가능하게 하려는 목적.
@@ -69,8 +71,7 @@ def _load_thresholds():
             except Exception as e:
                 logger.warning(f"[THRESH] failed to load env {envf}: {e}")
 
-    logger.info(f"[THRESH] searched: {tried}")
-    logger.info(f"[THRESH] loaded keys: {list(merged.keys())}")
+    logger.info(f"[THRESH] searched={tried} loaded keys={list(merged.keys())}")
 
     return merged
 
@@ -78,18 +79,6 @@ def _load_thresholds():
 _THRESH = _load_thresholds()
 if not _THRESH:
     logger.warning("[THRESH] WARNING: no thresholds loaded. diagnosis may be empty.")
-
-# metric → diagnosis 키 매핑(사람이 읽기 쉬운 키)
-_DIAG_KEY_MAP = {
-    "elbow_avg": "elbow_diag",
-    "knee_avg":  "knee_diag",
-}
-
-# 파일 키 ↔ 메트릭 키 alias (철자 혼용 방지 보완)
-_ALIAS = {
-    "elbow_avg": ["elbowAvg", "elbow"],
-    "knee_avg":  ["kneeAvg",  "knee"],
-}
 
 def _apply_bins_metrics_dict(metrics: dict) -> dict:
     """
@@ -105,11 +94,11 @@ def _apply_bins_metrics_dict(metrics: dict) -> dict:
         if val is None or val != val:  # None/NaN
             continue
 
-        # 1) 정확 키
+        # 1) 정확 키 -> alias 순으로 룰 찾기
         spec = _THRESH.get(metric_name)
         # 2) alias
         if not spec:
-            for alias in _ALIAS.get(metric_name, []):
+            for alias in ALIAS.get(metric_name, []):
                 spec = _THRESH.get(alias)
                 if spec:
                     break
@@ -124,7 +113,7 @@ def _apply_bins_metrics_dict(metrics: dict) -> dict:
             if mn <= val < mx:
                 msg = b.get("msg")
                 if msg:
-                    key = _DIAG_KEY_MAP.get(metric_name, metric_name)
+                    key = DIAG_KEY_MAP.get(metric_name, metric_name)
                     out[key] = msg
                 break
 
@@ -145,9 +134,9 @@ def _do_preprocess(src_path: str, mode: NormMode):
     t0 = time.perf_counter()
     used_mode = None
 
-    fps = getattr(settings, "VIDEO_FPS", 30)
-    height = getattr(settings, "VIDEO_HEIGHT", 720)
-    mirror = getattr(settings, "VIDEO_MIRROR", False)
+    fps = settings.VIDEO_FPS
+    height = settings.VIDEO_HEIGHT
+    mirror = settings.VIDEO_MIRROR
 
     try:
         if mode == NormMode.basic:
@@ -163,6 +152,12 @@ def _do_preprocess(src_path: str, mode: NormMode):
             except Exception:
                 normalize_video(src_path, dst_path, fps=fps, height=height, mirror=mirror)
                 used_mode = "basic"
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=422, detail=f"input not found: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"preprocess failed: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"unexpected preprocess error: {e}") from e
     finally:
         ms = int((time.perf_counter() - t0) * 1000)
 
@@ -205,9 +200,9 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
         "knee_avg":  float(knee_angle)  if knee_angle  == knee_angle  else float("nan"),
     }
 
-    # 4) 요약 메시지 (팔꿈치 단일) + JSON 룰로 다항목 진단
-    elbow_feedback = generate_feedback(elbow_angle)
+    # 4) 진단: thresholds 규칙 적용 (+ elbow 텍스트 백업)
     diagnosis = _apply_bins_metrics_dict(metrics)
+    elbow_feedback = generate_feedback(elbow_angle)
 
     if elbow_feedback and 'elbow_diag' not in diagnosis:
         diagnosis['elbow_diag'] = elbow_feedback
