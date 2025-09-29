@@ -57,5 +57,5 @@ curl -X POST "http://localhost:your_port/analyze" \
 ---
 
 ## 참고
-- Swagger UI: http://localhost:8080/docs  
+- Swagger UI: `http://localhost:your_port/docs`  
 - 전처리(FFmpeg) → 포즈 추출(MediaPipe) → 각도/메트릭 계산 → thresholds.json 기반 진단 생성
