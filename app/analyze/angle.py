@@ -1,91 +1,196 @@
 """
 왜 분리했나?
-- 수학/기하(각도 계산) 로직을 분석/피드백에서 분리하면 테스트/재사용이 쉬움(Separation of Concerns).
-- elbow 뿐 아니라 무릎, 척추 등 모든 관절 각도에 공통 패턴을 재사용 가능.
+- 수학/기하(각도 계산) 로직을 분석/피드백(service)에서 분리하면 테스트/재사용이 쉬움.
+- 팔꿈치/무릎/척추 등 모든 관절 각도 계산에 공통 패턴을 적용.
 """
 
+from typing import List, Dict, Sequence, Tuple, Optional
+import math
 import numpy as np
-from typing import List, Dict
 
-# MediaPipe Pose 인덱스 (오른팔/왼팔)
-_RIGHT = (12, 14, 16)  # shoulder, elbow, wrist (right)
-_LEFT  = (11, 13, 15)  # shoulder, elbow, wrist (left)
+# MediaPipe 인덱스/트리플릿은 하드코딩하지 않고 constants에서 가져온다
+from app.analyze.constants import (
+    L_SHOULDER, R_SHOULDER, L_ELBOW, R_ELBOW, L_WRIST, R_WRIST,
+    L_HIP, R_HIP, L_KNEE, R_KNEE, L_ANKLE, R_ANKLE,
+    RIGHT_ARM, LEFT_ARM, RIGHT_LEG, LEFT_LEG,
+)
 
-# MediaPipe Pose 인덱스 (오른 무릎/왼무릎)
-_KNEE_RIGHT = (24, 26, 28)
-_KNEE_LEFT  = (23, 25, 27)
-
-def _angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
-    """
-    벡터 끼인각 ∠ABC(도 단위)를 구한다.
-    - 수치 안정성을 위해 코사인 값을 -1~1로 clamp.
-    - BA = A - B, BC = C - B, cosθ = (BA·BC)/(|BA||BC|)
-    """
-    ba = a - b
-    bc = c - b
-    nba = np.linalg.norm(ba); nbc = np.linalg.norm(bc)
-    if nba == 0.0 or nbc == 0.0:  # 두 점이 같으면 각도 계산 불가
-        return np.nan
-    cosv = float(np.dot(ba, bc) / (nba * nbc))
-    cosv = max(-1.0, min(1.0, cosv))
-    return float(np.degrees(np.arccos(cosv)))
-
-def _xyz(lm: Dict[str, float]) -> np.ndarray:
-    """
-    Mediapipe landmark dict → np.array([x,y,z]) 변환.
-    - 좌표는 정규화(0~1). z는 상대 깊이. 2D만 써도 동작 가능.
-    """
-    return np.array([lm.get("x", 0.0), lm.get("y", 0.0), lm.get("z", 0.0)], dtype=float)
-
+# 시퀀스 평균 각도 (기존 파이프라인에서 사용)
 def calculate_elbow_angle(
     landmarks: List[List[Dict[str, float]]],
     side: str = "right",
-    min_vis: float = 0.5
+    min_vis: float = 0.5,
 ) -> float:
     """
-    프레임별 팔꿈치 각도를 계산하고, 유효 프레임들 평균(소수 1자리)을 반환.
-    - side: 'right' or 'left' (손잡이/카메라 세팅에 맞춰 선택)
-    - min_vis: 세 관절 중 하나라도 visibility < min_vis이면 해당 프레임 제외(잡음 제거)
-    - 유효 프레임이 없으면 NaN 반환 → 상위 레이어에서 친절 메시지 처리
+    프레임 시퀀스에서 팔꿈치(어깨-팔꿈치-손목) 각도의 평균(소수 1자리)을 반환.
+    - side: 'right' 또는 'left'
+    - min_vis: 세 관절 중 하나라도 visibility < min_vis면 해당 프레임 제외
+    - 유효 프레임이 없으면 NaN 반환
     """
-    idxs = _RIGHT if side.lower() == "right" else _LEFT
-    angles: List[float] = []
+    triplet = RIGHT_ARM if side.lower() == "right" else LEFT_ARM
+    return _sequence_mean_angle(landmarks, triplet, min_vis=min_vis)
 
-    for frame in landmarks:
-        if not frame or len(frame) < max(idxs) + 1:
-            continue  # 관절 갯수가 부족하면 스킵
-        s, e, w = frame[idxs[0]], frame[idxs[1]], frame[idxs[2]]
-        # 가시성 필터: 품질이 낮은 프레임 제외(분모=0, NaN 방지)
-        if any(lm.get("visibility", 1.0) < min_vis for lm in (s, e, w)):
-            continue
-        ang = _angle_deg(_xyz(s), _xyz(e), _xyz(w))
-        if not np.isnan(ang) and np.isfinite(ang):
-            angles.append(ang)
-
-    if not angles:
-        return float("nan")
-
-    return float(np.round(np.mean(angles), 1))
 
 def calculate_knee_angle(
     landmarks: List[List[Dict[str, float]]],
     side: str = "right",
-    min_vis: float = 0.5
+    min_vis: float = 0.5,
 ) -> float:
     """
-    평균 무릎 각도(hip–knee–ankle)를 계산해 반환.
-    - 페이즈 무관 전체 평균. 나중에 P7(임팩트) 각도로 확장 가능.
+    프레임 시퀀스에서 무릎(엉덩이-무릎-발목) 각도의 평균(소수 1자리)을 반환.
+    - side: 'right' 또는 'left'
+    - min_vis: 세 관절 중 하나라도 visibility < min_vis면 해당 프레임 제외
+    - 유효 프레임이 없으면 NaN 반환
     """
-    idxs = _KNEE_RIGHT if side.lower() == "right" else _KNEE_LEFT
-    angles: List[float] = []
-    for frame in landmarks:
-        if not frame or len(frame) < max(idxs) + 1:
-            continue
-        h, k, a = frame[idxs[0]], frame[idxs[1]], frame[idxs[2]]
-        if any(lm.get("visibility", 1.0) < min_vis for lm in (h, k, a)):
-            continue
-        ang = _angle_deg(_xyz(h), _xyz(k), _xyz(a))
-        if not np.isnan(ang) and np.isfinite(ang):
-            angles.append(ang)
+    triplet = RIGHT_LEG if side.lower() == "right" else LEFT_LEG
+    return _sequence_mean_angle(landmarks, triplet, min_vis=min_vis)
 
-    return float(np.round(np.mean(angles), 1)) if angles else float("nan")
+# 단일 프레임에서 주요 각도들 뽑기
+def angles_at_frame(
+    frame_landmarks: Sequence[Dict[str, float]],
+    side: str = "right",
+    min_vis: float = 0.0,
+) -> Dict[str, float]:
+    """
+    단일 프레임에서 주요 각도를 계산해 반환.
+    반환 키: {'elbow': float|NaN, 'knee': float|NaN, 'spine_tilt': float|NaN}
+
+    - elbow: (어깨-팔꿈치-손목) 꺾임각
+    - knee:  (엉덩이-무릎-발목) 꺾임각
+    - spine_tilt: 어깨중점→엉덩이중점 선의 화면상 기울기.
+        * 계산: atan2(vy, vx) [수평 기준 각도] → 수직 기준으로 변환: abs(90 - abs(deg))
+        * 좌표계(y가 아래로 증가) 가정하에 직관적 지표로 사용
+    """
+    # ---- 팔/다리 트리플릿 선택
+    arm = RIGHT_ARM if side.lower() == "right" else LEFT_ARM
+    leg = RIGHT_LEG if side.lower() == "right" else LEFT_LEG
+
+    # ---- 팔꿈치 각도
+    elbow = _angle_from_triplet(frame_landmarks, arm, min_vis=min_vis)
+
+    # ---- 무릎 각도
+    knee = _angle_from_triplet(frame_landmarks, leg, min_vis=min_vis)
+
+    # ---- 척추 기울기 (어깨/엉덩이의 중점 벡터)
+    spine_tilt = float("nan")
+    try:
+        rs = frame_landmarks[R_SHOULDER]
+        ls = frame_landmarks[L_SHOULDER]
+        rh = frame_landmarks[R_HIP]
+        lh = frame_landmarks[L_HIP]
+
+        # visibility 체크 (있을 때만)
+        vis_ok = True
+        for lm in (rs, ls, rh, lh):
+            v = lm.get("visibility", 1.0)
+            if v < min_vis:
+                vis_ok = False
+                break
+
+        if vis_ok:
+            mid_sh = ((_get(lm=rs, k="x") + _get(lm=ls, k="x")) / 2.0,
+                      (_get(lm=rs, k="y") + _get(lm=ls, k="y")) / 2.0)
+            mid_hip = ((_get(lm=rh, k="x") + _get(lm=lh, k="x")) / 2.0,
+                       (_get(lm=rh, k="y") + _get(lm=lh, k="y")) / 2.0)
+            vx, vy = (mid_hip[0] - mid_sh[0], mid_hip[1] - mid_sh[1])
+            # 수평 기준 각도
+            deg_h = math.degrees(math.atan2(vy, vx))
+            # 수직 기준 절대 기울기(0=수직, 90=수평에 가까움)
+            spine_tilt = abs(90.0 - abs(deg_h))
+            spine_tilt = float(np.round(spine_tilt, 1))
+    except Exception:
+        spine_tilt = float("nan")
+
+    return {
+        "elbow": float(np.round(elbow, 1)) if np.isfinite(elbow) else float("nan"),
+        "knee": float(np.round(knee, 1)) if np.isfinite(knee) else float("nan"),
+        "spine_tilt": spine_tilt,
+    }
+
+# 내부 유틸 (모듈 외부로 공개하지 않음)
+def _sequence_mean_angle(
+    sequence: List[List[Dict[str, float]]],
+    triplet: Tuple[int, int, int],
+    min_vis: float = 0.5,
+) -> float:
+    """
+    프레임 시퀀스와 (A,B,C) 인덱스(triplet)를 받아
+    각 프레임의 ∠ABC를 계산하고 유효 프레임 평균을 반환(소수 1자리).
+    """
+    if not sequence:
+        return float("nan")
+
+    vals: List[float] = []
+    for frame in sequence:
+        ang = _angle_from_triplet(frame, triplet, min_vis=min_vis)
+        if np.isfinite(ang):
+            vals.append(ang)
+
+    if not vals:
+        return float("nan")
+    return float(np.round(np.mean(vals), 1))
+
+
+def _angle_from_triplet(
+    frame: Sequence[Dict[str, float]],
+    triplet: Tuple[int, int, int],
+    min_vis: float = 0.0,
+) -> float:
+    """
+    단일 프레임에서 (A,B,C) 인덱스의 끼인각 ∠ABC를 계산.
+    visibility < min_vis가 하나라도 있으면 NaN.
+    """
+    a_idx, b_idx, c_idx = triplet
+    # 인덱스 범위/데이터 유효성
+    if max(triplet) >= len(frame):
+        return float("nan")
+
+    a, b, c = frame[a_idx], frame[b_idx], frame[c_idx]
+
+    # visibility 체크(키 없으면 1.0으로 간주)
+    for lm in (a, b, c):
+        if lm.get("visibility", 1.0) < min_vis:
+            return float("nan")
+
+    A = _xyz(a); B = _xyz(b); C = _xyz(c)
+    return _angle_deg(A, B, C)
+
+
+def _angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    """
+    벡터 끼인각 ∠ABC(도 단위).
+    BA = A - B, BC = C - B
+    cosθ = (BA·BC)/(|BA||BC|), 수치 안정성을 위해 clamp.
+    """
+    ba = a - b
+    bc = c - b
+    nba = float(np.linalg.norm(ba))
+    nbc = float(np.linalg.norm(bc))
+    if nba == 0.0 or nbc == 0.0:
+        return float("nan")
+    cosv = float(np.dot(ba, bc) / (nba * nbc))
+    cosv = max(-1.0, min(1.0, cosv))
+    return float(np.degrees(np.arccos(cosv)))
+
+
+def _xyz(lm: Dict[str, float]) -> np.ndarray:
+    """
+    Mediapipe landmark dict → np.array([x, y, z]) 변환.
+    - 좌표는 정규화(0~1). z는 상대 깊이(없으면 0).
+    """
+    return np.array([
+        _get(lm, "x"),
+        _get(lm, "y"),
+        _get(lm, "z"),
+    ], dtype=float)
+
+
+def _get(lm: Dict[str, float], k: str, default: float = 0.0) -> float:
+    """
+    dict 안전 접근. 키 없으면 default.
+    """
+    v = lm.get(k, default)
+    try:
+        return float(v)
+    except Exception:
+        return default

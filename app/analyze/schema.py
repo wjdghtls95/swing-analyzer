@@ -11,13 +11,22 @@ from typing import Optional, Dict, List
 class NormMode(str, Enum):
     """
     전처리 선택:
-      - basic: 항상 재인코딩(안정/느림) 
-      - pro: 하드웨어 인코딩/스마트 카피(빠름) 
+      - basic: 항상 재인코딩 (안정/느림)
+      - pro: 하드웨어 인코딩 / 스마트 카피(빠름)
       - auto: pro 시도 실패 시 basic fallback
     """
     basic = "basic"
     pro   = "pro"
     auto  = "auto"
+
+class ClubType(str, Enum):
+    """
+    골프 클럽 선택
+    """
+    driver = 'driver'
+    iron = 'iron'
+    wedge = 'wedge'
+    putter = 'putter'
 
 class AnalyzeResponse(BaseModel):
     """

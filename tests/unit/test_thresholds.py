@@ -27,7 +27,7 @@ def test_diagnosis_from_thresholds(monkeypatch):
     monkeypatch.setattr(svc, "_THRESH", fake_thresh, raising=True)
 
     metrics = {"elbow_avg": 110.0, "knee_avg": 128.0}
-    out = svc._apply_bins_metrics_dict(metrics)
+    out = svc._apply_bins_metrics_dict(metrics, fake_thresh)
 
     assert out.get("elbow_diag") == "팔꿈치 굴곡이 큰 편입니다."
     assert out.get("knee_diag") == "무릎 굴곡이 큰 편입니다."

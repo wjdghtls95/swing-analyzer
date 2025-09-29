@@ -3,10 +3,11 @@
 - Swagger에서 바로 튜닝/비교 가능(side, min_vis, norm_mode).
 - 좌/우타/가시성 임계치에 따라 결과가 크게 달라질 수 있어 빠른 검증이 중요.
 """
+from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Query
 from app.analyze.service import analyze_swing, analyze_from_url
-from app.analyze.schema import AnalyzeResponse, UrlRequest, NormMode
+from app.analyze.schema import AnalyzeResponse, UrlRequest, NormMode, ClubType
 import os, shutil, uuid
 
 router = APIRouter()
@@ -22,7 +23,8 @@ async def analyze(
     file: UploadFile = File(...),
     side: str = Query("right", regex="^(right|left)$"),   # 좌/우타
     min_vis: float = Query(0.5, ge=0.0, le=1.0),          # 가시성 임계치
-    norm_mode: NormMode = Query(NormMode.auto)            # 전처리 모드
+    norm_mode: NormMode = Query(NormMode.auto),            # 전처리 모드
+    club: Optional[ClubType] = Query(None)
 ):
     os.makedirs("uploads", exist_ok=True)
     file_id = uuid.uuid4().hex[:8]
@@ -32,9 +34,9 @@ async def analyze(
         shutil.copyfileobj(file.file, f)
 
     # service가 요약 응답(딕셔너리)만 돌려줌
-    return analyze_swing(file_path, side=side, min_vis=min_vis, norm_mode=norm_mode)
+    return analyze_swing(file_path, side = side, min_vis = min_vis, norm_mode = norm_mode, club = club)
 
-@router.post("/url", response_model=AnalyzeResponse, tags=["Swing"])
+@router.post("/url", tags=["Swing"])
 async def analyze_url(
     data: UrlRequest,
     side: str = Query("right", regex="^(right|left)$"),

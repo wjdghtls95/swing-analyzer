@@ -5,14 +5,18 @@
 - 향후 /analyze/full 엔드포인트를 열면 같은 풀데이터를 즉시 노출 가능(확장성).
 """
 import os, shutil, uuid, time, json, requests, logging
+from copy import deepcopy
 from pathlib import Path
+from typing import Optional
+
 from fastapi import HTTPException
 
 from app.analyze.constants import DIAG_KEY_MAP, ALIAS
 from app.analyze.extractor import PoseExtractor
-from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle  # ← 무릎 함수 사용
+from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle, angles_at_frame  # ← 무릎 함수 사용
 from app.analyze.feedback import generate_feedback
-from app.analyze.schema import NormMode
+from app.analyze.phase import detect_phases
+from app.analyze.schema import NormMode, ClubType
 from app.config.settings import settings
 from app.analyze.preprocess import normalize_video, normalize_video_pro
 
@@ -26,6 +30,122 @@ if not logging.getLogger().handlers:
 _LOG_DIR = os.path.join("logs")
 os.makedirs(_LOG_DIR, exist_ok=True)
 
+# ---------- 메인 파이프라인 ----------
+def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
+                  norm_mode: NormMode = NormMode.auto, club: Optional[ClubType] = None) -> dict:
+    """
+    엔드투엔드 분석 파이프라인
+      1) 전처리(코덱/해상도/FPS 표준화)
+      2) 포즈 추출(샘플링/추적)
+      3) 핵심 메트릭 계산 (elbow_avg, knee_avg)
+      4) 단일 요약 메시지(feedback) + 다항목 진단(diagnosis; 내부 로깅용)
+      5) 검출률/메타 계산
+      6) 내부 로깅(full_result) 저장 → 최종 응답은 요약만 반환
+    """
+    # 1) 전처리
+    try:
+        norm_path, used_mode, preprocess_ms = _do_preprocess(file_path, norm_mode)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=422, detail=f"Input not found: {e}")
+    except RuntimeError as e:
+        # ffmpeg/ffprobe not found 등 커맨드 실패
+        raise HTTPException(status_code=500, detail=f"Preprocess failed: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+    # 2) 포즈 추출
+    extractor = PoseExtractor(step=getattr(settings, "POSE_FRAME_STEP", 3))
+    landmarks_np, landmarks, total_seen = extractor.extract_from_video(norm_path)
+
+    # 3) 메트릭 계산 (평균값 이후 P4/P7 등 구간값 확장 가능)
+    elbow_angle = calculate_elbow_angle(landmarks, side=side, min_vis=min_vis)
+    knee_angle = calculate_knee_angle(landmarks, side=side, min_vis=min_vis)
+
+    metrics = {
+        "elbow_avg": float(elbow_angle) if elbow_angle == elbow_angle else float("nan"),
+        "knee_avg": float(knee_angle) if knee_angle == knee_angle else float("nan"),
+    }
+
+    # 4) Phase별 지표 (P2~P9 전체)
+    phases = detect_phases(landmarks)
+    phase_metrics = {}
+    for key, idx in phases.items():
+        if idx is None or idx >= len(landmarks):
+            phase_metrics[key] = {}
+            continue
+        frame = landmarks[idx]
+        phase_metrics[key] = angles_at_frame(frame, side=side)
+
+    # 5) 진단: thresholds 규칙 적용 (+ elbow 텍스트 백업)
+    # phase_metrics를 thresholds 키와 동일 포맷으로 평탄화
+    flat_phase_metrics = {}
+    for ph, vals in phase_metrics.items():  # ex) "P4": {"elbow": 129.9, "knee": 132.4, ...}
+        if not vals:
+            continue
+        for k, v in vals.items():  # k: "elbow" / "knee" / "spine_tilt" ...
+            if v is None or v != v:  # None/NaN skip
+                continue
+            flat_phase_metrics[f"{ph}.{k}"] = v  # ex) "P4.elbow": 129.9
+
+    # 평균 metrics와 합쳐서 룰 평가에 투입
+    metrics_for_rules = {**metrics, **flat_phase_metrics}
+    rules = _select_rules_for_club(_THRESH, club)
+    diagnosis = _apply_bins_metrics_dict(metrics_for_rules, rules)
+
+    elbow_feedback = generate_feedback(elbow_angle)
+    if elbow_feedback and 'elbow_diag' not in diagnosis:
+        diagnosis['elbow_diag'] = elbow_feedback
+
+    # 6) 검출률 계산
+    detected = len(landmarks)  # 검출 성공 프레임 수
+    total = int(total_seen or detected)  # 샘플링 후 총 평가 프레임 수
+    rate = round(detected / total, 3) if total else None
+
+    swing_id = os.path.basename(file_path).split("_")[0]
+
+    # 6) 내부 로깅(full_result): ML/튜닝/리포팅용
+    full_result = {
+        "swingId": swing_id,
+        "side": side,
+        "min_vis": min_vis,
+        "club": club.value if club else None,
+        "preprocessMode": used_mode,
+        "preprocessMs": preprocess_ms,
+        "detectedFrames": detected,
+        "totalFrames": total,
+        "detectionRate": rate,
+        "metrics": metrics,
+        "phases": phases,
+        "phase_metrics": phase_metrics,
+        "diagnosis_by_phase": _group_diagnosis_by_phase(diagnosis),
+    }
+    try:
+        log_path = os.path.join(_LOG_DIR, f"{swing_id}_{uuid.uuid4().hex[:6]}.json")
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(full_result, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.debug(f"[LOG] write failed: {e}")
+
+    # 7) 최종 응답
+    return full_result
+
+
+def analyze_from_url(s3_url: str, side: str = "right", min_vis: float = 0.5,
+                     norm_mode: NormMode = NormMode.auto) -> dict:
+    """
+    원격 URL(S3 등)에서 파일을 받아 analyze_swing으로 위임.
+    - stream=True로 메모리 사용을 줄이고 파일로 직접 저장.
+    """
+    os.makedirs("downloads", exist_ok=True)
+    filename = f"downloads/{uuid.uuid4().hex[:8]}.mp4"
+    with requests.get(s3_url, stream=True) as r:
+        r.raise_for_status()
+        with open(filename, "wb") as f:
+            shutil.copyfileobj(r.raw, f)
+
+    return analyze_swing(filename, side=side, min_vis=min_vis, norm_mode=norm_mode)
+
+# ------------ Private ------------
 # ---------- thresholds 로더 ----------
 def _load_thresholds() -> dict:
     """
@@ -75,12 +195,40 @@ def _load_thresholds() -> dict:
 
     return merged
 
-
+# ---------- thresholds 전역 로드 ----------
+# 모듈 import 시 한 번만 로드
 _THRESH = _load_thresholds()
 if not _THRESH:
     logger.warning("[THRESH] WARNING: no thresholds loaded. diagnosis may be empty.")
 
-def _apply_bins_metrics_dict(metrics: dict) -> dict:
+# ---------- 룰 유틸 ----------
+def _flatten_phase_rules(rules: dict) -> dict:
+    """
+    rules 내부의 rules['phases'] 하위키를 최상위로 끌어올린다.
+    예) {"phases": {"P4.elbow": {...}}} → {"P4.elbow": {...}}
+    """
+    flat = dict(rules or {})
+    phases = flat.pop("phases", None)
+    if isinstance(phases, dict):
+        for k, v in phases.items():
+            flat[k] = v
+    return flat
+
+# ---------- 골프 클럽 선택 ----------
+def _select_rules_for_club(all_rules: dict, club: Optional[ClubType]) -> dict:
+    """
+    default 위에 club 섹션을 얕게 덮어쓴 dict를 돌려주고,
+    마지막에 phases를 평탄화하여 매칭 엔진과 형식을 맞춘다.
+    """
+    base = deepcopy(all_rules.get("default", {}))
+    if club:
+        club_rules = all_rules.get(club.value, {})
+        if isinstance(club_rules, dict):
+            base.update(club_rules)
+    # phases 평탄화
+    return _flatten_phase_rules(base)
+
+def _apply_bins_metrics_dict(metrics: dict, rules: dict) -> dict:
     """
     metrics에 실제로 존재하는 지표들을 기준으로 진단을 생성한다.
     - 우선순위: thresholds 파일(_THRESH)에 해당 지표 룰이 있으면 그걸 사용
@@ -95,16 +243,17 @@ def _apply_bins_metrics_dict(metrics: dict) -> dict:
             continue
 
         # 1) 정확 키 -> alias 순으로 룰 찾기
-        spec = _THRESH.get(metric_name)
+        spec = rules.get(metric_name)
+
         # 2) alias
         if not spec:
             for alias in ALIAS.get(metric_name, []):
-                spec = _THRESH.get(alias)
+                spec = rules.get(alias)
                 if spec:
                     break
         if not spec:
             # 디버깅 도움 로그(원치 않으면 지워도 됨)
-            logger.debug(f"[THRESH] no rule for '{metric_name}' (available keys={list(_THRESH.keys())})")
+            logger.debug(f"[THRESH] no rule for '{metric_name}' (available keys={list(rules.keys())})")
             continue
 
         for b in spec.get("bins", []):
@@ -113,7 +262,10 @@ def _apply_bins_metrics_dict(metrics: dict) -> dict:
             if mn <= val < mx:
                 msg = b.get("msg")
                 if msg:
-                    key = DIAG_KEY_MAP.get(metric_name, metric_name)
+                    if metric_name in DIAG_KEY_MAP:
+                        key = DIAG_KEY_MAP[metric_name]
+                    else:
+                        key = metric_name.replace('.', '_') + '_diag'
                     out[key] = msg
                 break
 
@@ -163,92 +315,44 @@ def _do_preprocess(src_path: str, mode: NormMode):
 
     return dst_path, used_mode, ms
 
-# ---------- 메인 파이프라인 ----------
-def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
-                  norm_mode: NormMode = NormMode.auto) -> dict:
-
+def _group_diagnosis_by_phase(diagnosis: dict) -> dict:
     """
-    엔드투엔드 분석 파이프라인(B안):
-      1) 전처리(코덱/해상도/FPS 표준화)
-      2) 포즈 추출(샘플링/추적)
-      3) 핵심 메트릭 계산(elbow_avg, knee_avg)
-      4) 단일 요약 메시지(feedback) + 다항목 진단(diagnosis; 내부 로깅용)
-      5) 검출률/메타 계산
-      6) 내부 로깅(full_result) 저장 → 최종 응답은 요약만 반환
+    flat 진단 키들을 phase별 딕셔너리로 재그룹화
+    지원 키 형태:
+      - "P4.elbow_diag"  (권장)
+      - "P4_elbow_diag"  (하위호환)
+      - "elbow_diag"     (평균/전체 → AVG)
+    반환 예:
+      {"AVG": {"elbow_diag": "..."}, "P4": {"spine_tilt_diag": "..."}, ...}
     """
-    # 1) 전처리
-    try:
-        norm_path, used_mode, preprocess_ms = _do_preprocess(file_path, norm_mode)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=422, detail=f"Input not found: {e}")
-    except RuntimeError as e:
-        # ffmpeg/ffprobe not found 등 커맨드 실패
-        raise HTTPException(status_code=500, detail=f"Preprocess failed: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+    out = {}
+    for k, msg in diagnosis.items():
+        phase = None
+        metric = None
 
-    # 2) 포즈 추출
-    extractor = PoseExtractor(step=getattr(settings, "POSE_FRAME_STEP", 3))
-    landmarks_np, landmarks, total_seen = extractor.extract_from_video(norm_path)
+        # "P4.spine_tilt_diag"
+        if "." in k:
+            phase_part, metric_part = k.split(".", 1)
+            if phase_part.startswith("P"):
+                phase = phase_part
+                metric = metric_part
 
-    # 3) 메트릭 계산 (평균값 이후 P4/P7 등 구간값 확장 가능)
-    elbow_angle = calculate_elbow_angle(landmarks, side=side, min_vis=min_vis)
-    knee_angle  = calculate_knee_angle(landmarks,  side=side, min_vis=min_vis)
+        # "P4_elbow_diag" (하위호환)
+        if phase is None and "_" in k:
+            parts = k.split("_", 1)
+            if parts[0].startswith("P"):
+                phase = parts[0]
+                metric = parts[1]
 
-    metrics = {
-        "elbow_avg": float(elbow_angle) if elbow_angle == elbow_angle else float("nan"),
-        "knee_avg":  float(knee_angle)  if knee_angle  == knee_angle  else float("nan"),
-    }
+        # phase가 없으면 평균 섹션
+        if phase is None:
+            phase = "AVG"
+            metric = k  # ex) elbow_diag / knee_diag
 
-    # 4) 진단: thresholds 규칙 적용 (+ elbow 텍스트 백업)
-    diagnosis = _apply_bins_metrics_dict(metrics)
-    elbow_feedback = generate_feedback(elbow_angle)
+        # 접미사 정리
+        if not metric.endswith("_diag"):
+            metric = f"{metric}_diag"
 
-    if elbow_feedback and 'elbow_diag' not in diagnosis:
-        diagnosis['elbow_diag'] = elbow_feedback
+        out.setdefault(phase, {})[metric] = msg
+    return out
 
-    # 5) 검출률 계산
-    detected = len(landmarks)           # 검출 성공 프레임 수
-    total = int(total_seen or detected) # 샘플링 후 총 평가 프레임 수
-    rate = round(detected / total, 3) if total else None
-
-    swing_id = os.path.basename(file_path).split("_")[0]
-
-    # 6) 내부 로깅(full_result): ML/튜닝/리포팅용
-    full_result = {
-        "swingId": swing_id,
-        "side": side,
-        "min_vis": min_vis,
-        "preprocessMode": used_mode,
-        "preprocessMs": preprocess_ms,
-        "detectedFrames": detected,
-        "totalFrames": total,
-        "detectionRate": rate,
-        "metrics": metrics,
-        "diagnosis": diagnosis,
-        # TODO: phases, framewise series 등 확장 가능
-    }
-    try:
-        log_path = os.path.join(_LOG_DIR, f"{swing_id}_{uuid.uuid4().hex[:6]}.json")
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(full_result, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.debug(f"[LOG] write failed: {e}")
-
-    # 7) 최종 응답
-    return full_result
-
-def analyze_from_url(s3_url: str, side: str = "right", min_vis: float = 0.5,
-                     norm_mode: NormMode = NormMode.auto) -> dict:
-    """
-    원격 URL(S3 등)에서 파일을 받아 analyze_swing으로 위임.
-    - stream=True로 메모리 사용을 줄이고 파일로 직접 저장.
-    """
-    os.makedirs("downloads", exist_ok=True)
-    filename = f"downloads/{uuid.uuid4().hex[:8]}.mp4"
-    with requests.get(s3_url, stream=True) as r:
-        r.raise_for_status()
-        with open(filename, "wb") as f:
-            shutil.copyfileobj(r.raw, f)
-            
-    return analyze_swing(filename, side=side, min_vis=min_vis, norm_mode=norm_mode)
