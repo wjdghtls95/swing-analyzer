@@ -19,6 +19,7 @@ from app.analyze.phase import detect_phases
 from app.analyze.schema import NormMode, ClubType
 from app.config.settings import settings
 from app.analyze.preprocess import normalize_video, normalize_video_pro
+from app.analyze.results_builder import build_result
 
 # ---------- 로거 ----------
 logger = logging.getLogger(__name__)
@@ -67,7 +68,9 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
     }
 
     # 4) Phase별 지표 (P2~P9 전체)
-    phases = detect_phases(landmarks)
+    phase_method = getattr(settings, "PHASE_METHOD", "auto")
+    phases = detect_phases(landmarks, phase_method)
+
     phase_metrics = {}
     for key, idx in phases.items():
         if idx is None or idx >= len(landmarks):
@@ -89,9 +92,14 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
 
     # 평균 metrics와 합쳐서 룰 평가에 투입
     metrics_for_rules = {**metrics, **flat_phase_metrics}
+
+    # 룰 선택(default + club override + phases 평탄화)
     rules = _select_rules_for_club(_THRESH, club)
+
+    # 룰 매칭 → flat diagnosis dict
     diagnosis = _apply_bins_metrics_dict(metrics_for_rules, rules)
 
+    # elbow 텍스트 fallback(룰 미스매치 시)
     elbow_feedback = generate_feedback(elbow_angle)
     if elbow_feedback and 'elbow_diag' not in diagnosis:
         diagnosis['elbow_diag'] = elbow_feedback
@@ -104,21 +112,25 @@ def analyze_swing(file_path: str, side: str = "right", min_vis: float = 0.5,
     swing_id = os.path.basename(file_path).split("_")[0]
 
     # 6) 내부 로깅(full_result): ML/튜닝/리포팅용
-    full_result = {
-        "swingId": swing_id,
-        "side": side,
-        "min_vis": min_vis,
-        "club": club.value if club else None,
-        "preprocessMode": used_mode,
-        "preprocessMs": preprocess_ms,
-        "detectedFrames": detected,
-        "totalFrames": total,
-        "detectionRate": rate,
-        "metrics": metrics,
-        "phases": phases,
-        "phase_metrics": phase_metrics,
-        "diagnosis_by_phase": _group_diagnosis_by_phase(diagnosis),
-    }
+    full_result = build_result(
+        swing_id=swing_id,
+        file_path=file_path,
+        side=side,
+        club=club,
+        used_mode=used_mode,
+        preprocess_ms=preprocess_ms,
+        min_vis=min_vis,
+        phase_method=phase_method,
+        detected=detected,
+        total=total,
+        rate=rate,
+        metrics=metrics,
+        phases=phases,
+        phase_metrics=phase_metrics,
+        diagnosis_by_phase=_group_diagnosis_by_phase(diagnosis),
+        rules=rules,
+    )
+
     try:
         log_path = os.path.join(_LOG_DIR, f"{swing_id}_{uuid.uuid4().hex[:6]}.json")
         with open(log_path, "w", encoding="utf-8") as f:
@@ -217,8 +229,8 @@ def _flatten_phase_rules(rules: dict) -> dict:
 # ---------- 골프 클럽 선택 ----------
 def _select_rules_for_club(all_rules: dict, club: Optional[ClubType]) -> dict:
     """
-    default 위에 club 섹션을 얕게 덮어쓴 dict를 돌려주고,
-    마지막에 phases를 평탄화하여 매칭 엔진과 형식을 맞춘다.
+    default 위에 club 섹션을 얕게 덮어쓴 dict를 돌려주고
+    마지막에 phases를 평탄화하여 매칭 엔진과 형식을 맞춤
     """
     base = deepcopy(all_rules.get("default", {}))
     if club:
@@ -315,6 +327,7 @@ def _do_preprocess(src_path: str, mode: NormMode):
 
     return dst_path, used_mode, ms
 
+# ---------- 진단 그룹화 ----------
 def _group_diagnosis_by_phase(diagnosis: dict) -> dict:
     """
     flat 진단 키들을 phase별 딕셔너리로 재그룹화

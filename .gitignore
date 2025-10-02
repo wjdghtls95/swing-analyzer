@@ -56,6 +56,17 @@ frames/
 data/
 uploads
 
+# data & outputs
+logs/
+artifacts/
+*.parquet
+*.csv
+
+# notebooks
+.notebooks/
+.ipynb_checkpoints/
+
+
 # environment
 .env
 .env.test

@@ -1,11 +1,13 @@
 import os
 from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
 
 from app.analyze.constants import DEFAULT_VIDEO_FPS, DEFAULT_VIDEO_HEIGHT, DEFAULT_VIDEO_MIRROR
 
 # ─────────────────────────────────────────────────────────
-# 1) .env 로딩 전략 (실행 환경에 따라 자동 선택)
+#    .env 로딩 전략 (실행 환경에 따라 자동 선택)
 #    - ENV_FILE 가 지정되면 그걸 사용
 #    - 아니면 .env.<ENV> 가 있으면 사용, 없으면 .env
 # ─────────────────────────────────────────────────────────
@@ -21,13 +23,6 @@ def _env_path(name: str, default: Path) -> Path:
     v = os.getenv(name)
     return Path(v) if v else default
 
-# ─────────────────────────────────────────────────────────
-# 2) 통합 Settings
-#    - App/runtime 설정 (포트/디버그 등)
-#    - 경로 설정 (uploads, output)
-#    - 영상 전처리 파라미터 (fps/height/mirror)
-#    - 필요 시 외부 연동 키/엔드포인트도 여기에 추가
-# ─────────────────────────────────────────────────────────
 class Settings:
     # ── App / Runtime ─────────────────────────────────────
     ENV: str = os.getenv("ENV", _DEFAULT_ENV)            # dev|test|prod
@@ -42,7 +37,11 @@ class Settings:
     # ── Video Normalize Params ────────────────────────────
     VIDEO_FPS: int = int(os.getenv("VIDEO_FPS", DEFAULT_VIDEO_FPS))
     VIDEO_HEIGHT: int = int(os.getenv("VIDEO_HEIGHT", DEFAULT_VIDEO_HEIGHT))
-    VIDEO_MIRROR: bool = _env_bool("VIDEO_MIRROR", DEFAULT_VIDEO_MIRROR) == ' true'  # 좌/우타, 카메라 각 보정시
+    VIDEO_MIRROR: bool = _env_bool("VIDEO_MIRROR", DEFAULT_VIDEO_MIRROR)  # 좌/우타, 카메라 각 보정시
+
+    # ── Phase detection ──────
+    PHASE_METHOD: str = os.getenv("PHASE_METHOD", "auto")  # "auto" | "ml" | "rule"
+    PHASE_MODEL_PATH: Optional[str] = os.getenv("PHASE_MODEL_PATH")  # 없으면 rule fallback
 
     # ── (옵션) 외부 연동/스토리지/DB/큐 등 ───────────────
     # DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -51,7 +50,7 @@ class Settings:
     # PLATFORM_API_TOKEN: str | None = os.getenv("PLATFORM_API_TOKEN")
 
     def __init__(self) -> None:
-        # 디렉터리 존재 보장 (실무: 앱 기동 시 1회)
+        # 디렉토리 존재 보장 (앱 시작 시 1회)
         self.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
