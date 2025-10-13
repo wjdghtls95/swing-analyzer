@@ -52,21 +52,41 @@ python -m app.main
 ## 프로젝트 구조
 ```
 swing-analyzer/
-  app/
-    api/
-    analyze/
-    config/
-      thresholds.base.json
-      thresholds.json
-    main.py
-  docs/
-    README.md
-    api.md
-    thresholds.md
-    dev_guide.md
-  logs/
-  downloads/
-  normalized/
-  .env
-  requirements.txt
+├─ .env                          # 환경변수(로컬)
+├─ .gitignore                    # data/, artifacts/ 등 큰 파일 제외
+├─ artifacts/
+│  └─ models/
+│     └─ phase_lstm.pt          # ML 체크포인트(버전 고정 파일은 여기에)
+├─ app/
+│  ├─ main.py
+│  ├─ analyze/
+│  │  ├─ phase.py               # ML/룰 기반 phase 검출 (이미 사용 중)
+│  │  ├─ angle.py               # 각도 계산
+│  │  └─ constants.py
+│  ├─ config/
+│  │  ├─ settings.py            # ROOT=레포 루트 기준
+│  │  └─ thresholds.json        # 최종 반영되는 기준 파일(운영용)
+│  ├─ ml/
+│  │  ├─ __init__.py
+│  │  ├─ phase_lstm.py          # 모델 정의
+│  │  └─ phase_adapter.py       # TorchPhaseAdapter (scikit-like)
+│  └─ storage/
+│     └─ local.py               # LocalFS (나중에 s3로 대체 가능)
+├─ data/                         # ← 루트에 두고 .gitignore 처리
+│  ├─ raw/
+│  │  └─ pros/
+│  │     ├─ tiger/
+│  │     │  ├─ iron/    *.mp4
+│  │     │  └─ driver/  *.mp4
+│  │     └─ rory/
+│  │        └─ iron/    *.mp4
+│  ├─ processed/
+│  │  └─ phase_dataset.csv      # 배치①이 생성
+│  └─ reports/
+│     └─ thresholds.pros.json   # 배치②가 생성(검토 후 app/config로 반영)
+├─ scripts/
+│  ├─ video_to_csv.py           # 배치①: 영상 → CSV(phase별 피처 추출)
+│  └─ csv_to_thresholds.py      # 배치②: CSV → 기준 bins 자동 생성
+├─ uploads/                     # 앱 업로드 디렉토리(기존 사용 중이면 유지)
+└─ README.md
 ```
