@@ -42,6 +42,9 @@ class Settings:
     # ── Phase detection ──────
     PHASE_METHOD: str = os.getenv("PHASE_METHOD", "auto")  # "auto" | "ml" | "rule"
     PHASE_MODEL_PATH: Optional[str] = os.getenv("PHASE_MODEL_PATH")  # 없으면 rule fallback
+    PHASE_MODEL_INPUT_DIM: int = 3
+    PHASE_MODEL_HIDDEN_DIM: int = 32
+    PHASE_MODEL_NUM_CLASSES: int = 8
 
     # ── (옵션) 외부 연동/스토리지/DB/큐 등 ───────────────
     # DATABASE_URL: str | None = os.getenv("DATABASE_URL")

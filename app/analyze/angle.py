@@ -101,11 +101,68 @@ def angles_at_frame(
     except Exception:
         spine_tilt = float("nan")
 
-    return {
+    # ── 추가: 어깨/엉덩이 회전 각도 + X-팩터 ─────────────────
+    shoulder_turn = float("nan")
+    hip_turn = float("nan")
+
+    try:
+        rs = frame_landmarks[R_SHOULDER]
+        ls = frame_landmarks[L_SHOULDER]
+        rh = frame_landmarks[R_HIP]
+        lh = frame_landmarks[L_HIP]
+
+        if all(lm.get("visibility", 1.0) >= min_vis for lm in (ls, rs)):
+            shoulder_turn = _line_angle(ls, rs)  # 왼→오른 어깨 라인 각도
+        if all(lm.get("visibility", 1.0) >= min_vis for lm in (lh, rh)):
+            hip_turn = _line_angle(lh, rh)  # 왼→오른 엉덩이 라인 각도
+
+        shoulder_turn = _wrap_deg(shoulder_turn)
+        hip_turn = _wrap_deg(hip_turn)
+        x_factor = _delta_deg(shoulder_turn, hip_turn)
+    except Exception:
+        x_factor = float('nan')
+
+    # 기존 반환 dict에 합치기
+    base = {
         "elbow": float(np.round(elbow, 1)) if np.isfinite(elbow) else float("nan"),
         "knee": float(np.round(knee, 1)) if np.isfinite(knee) else float("nan"),
         "spine_tilt": spine_tilt,
+        "shoulder_turn": float(np.round(shoulder_turn, 1)) if math.isfinite(shoulder_turn) else float("nan"),
+        "hip_turn": float(np.round(hip_turn, 1)) if math.isfinite(hip_turn) else float("nan"),
+        "x_factor": float(np.round(x_factor, 1)) if math.isfinite(x_factor) else float("nan"),
     }
+
+    return base
+
+# 좌우 두 점으로 라인 각도(수평 = 0°, 시계방향 양수)
+def _line_angle(p_left, p_right):
+    try:
+        dx = _get(p_right, "x") - _get(p_left, "x")
+        dy = _get(p_right, "y") - _get(p_left, "y")
+        # 화면 좌표(y 아래로 증가) 고려해서 -dy
+        return math.degrees(math.atan2(-dy, dx))
+    except Exception:
+        return float("nan")
+
+
+# 각도 정규화 유틸
+def _wrap_deg(a: float) -> float:
+    """임의의 각도를 [-180, 180]로 래핑"""
+    if not math.isfinite(a):
+        return float("nan")
+    a = (a + 180.0) % 360.0 - 180.0
+    if a == -180.0:
+        a = 180.0
+    return a
+
+def _delta_deg(a: float, b: float) -> float:
+    """두 각도의 최소 부호 있는 차이( a - b ), 결과 [-180, 180]"""
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return float("nan")
+    d = (a - b + 180.0) % 360.0 - 180.0
+    if d == -180.0:
+        d = 180.0
+    return d
 
 # 내부 유틸 (모듈 외부로 공개하지 않음)
 def _sequence_mean_angle(

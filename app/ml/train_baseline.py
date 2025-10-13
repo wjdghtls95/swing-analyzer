@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-from ml.features import build_features
+from app.ml.features import build_features
 
 DATA = Path("artifacts/aggregated.csv")
 

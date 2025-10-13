@@ -3,9 +3,13 @@ import logging
 import os
 
 import numpy as np
+import torch
+import pickle
 
 from app.config.settings import settings
 from app.analyze.angle import angles_at_frame  # 프레임 단위 elbow/knee/spine_tilt 계산
+
+from app.ml import PhaseLSTM, TorchPhaseAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ def detect_phases(
         # fallback
         return _detect_phases_equal_split(total)
 
-    # 안전장치: 정의되지 않은 method → rule
+    # 안전장치 정의되지 않은 method → rule
     logger.warning(f"[phase] unknown method={method}, fallback to rule.")
     return _detect_phases_equal_split(total)
 
@@ -51,45 +55,110 @@ def detect_phases(
 # Private helpers
 def _detect_phases_equal_split(total_frames: int) -> Dict[str, int]:
     """
-    데모/폴백용: 전체 프레임을 8등분하여 P2~P9 인덱스 산출.
+    데모/폴백용: 전체 프레임을 8등분하여 P2~P9 인덱스 산출
     """
     step = total_frames // 8
     return {f"P{i}": step * (i - 2) for i in range(2, 10)}
 
 
 # ---- ML 로딩/추론 ------------------------------------------------------------
-
 _PHASE_MODEL = None  # lazy cache
 
 def _load_phase_model():
     """
     Phase 모델 지연 로딩.
-    - settings.PHASE_MODEL_PATH 또는 ENV PHASE_MODEL_PATH를 우선 사용.
-    - 파일 없거나 로드 실패 시 None 반환(서비스는 rule로 폴백).
+    - settings.PHASE_MODEL_PATH 또는 ENV PHASE_MODEL_PATH 우선.
+    - .pt/.ckpt => torch LSTM 로드 + TorchPhaseAdapter 로 감싸 반환
+    - 그 외 => pickle 로드
+    - 실패 시 None (서비스는 rule로 폴백)
     """
     global _PHASE_MODEL
     if _PHASE_MODEL is not None:
         return _PHASE_MODEL
 
-    # 우선순위: settings -> env
+    # 모델 경로 우선순위: settings -> env
     path = getattr(settings, "PHASE_MODEL_PATH", None) or os.environ.get("PHASE_MODEL_PATH")
     if not path:
+        logger.warning("[phase] no PHASE_MODEL_PATH provided.")
         return None
 
     if not os.path.exists(path):
         logger.warning(f"[phase] model path not found: {path}")
         return None
 
-    try:
-        import pickle
-        with open(path, "rb") as f:
-            _PHASE_MODEL = pickle.load(f)
-        logger.info(f"[phase] model loaded: {path}")
-        return _PHASE_MODEL
-    except Exception as e:
-        logger.warning(f"[phase] model load failed: {e}")
+    if not (path.endswith(".pt") or path.endswith(".ckpt")):
+        logger.warning(f"[phase] unsupported model file (expect .pt or .ckpt): {path}")
         return None
 
+    # 모델 하이퍼파라미터 읽기 (환경변수나 settings에서) & 학습과 동일해야 함
+    input_dim = int(os.environ.get("PHASE_MODEL_INPUT_DIM", getattr(settings, "PHASE_MODEL_INPUT_DIM", 3)))
+    hidden_dim = int(os.environ.get("PHASE_MODEL_HIDDEN_DIM", getattr(settings, "PHASE_MODEL_HIDDEN_DIM", 32)))
+    num_classes = int(
+        os.environ.get("PHASE_MODEL_NUM_CLASSES", getattr(settings, "PHASE_MODEL_NUM_CLASSES", 8)))
+
+    try:
+        # 1) 체크포인트 로드
+        state = torch.load(path, map_location="cpu")
+        # lightning 형식이면 'state_dict' 안에 들어있을 수 있음
+        if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+            state = state["state_dict"]
+
+        # 2) lstm.weight_ih_l0 찾기 (순차 확인 + suffix 검색)
+        w_ih = None
+        for k in ("lstm.weight_ih_l0", "model.lstm.weight_ih_l0"):
+            if k in state:
+                w_ih = state[k]
+                break
+        if w_ih is None:
+            # suffix로도 한번 더 탐색
+            for k in state.keys():
+                if k.endswith("lstm.weight_ih_l0"):
+                    w_ih = state[k]
+                    break
+        if w_ih is None:
+            sample = list(state.keys())[:10]
+            raise ValueError(f"checkpoint missing 'lstm.weight_ih_l0'. sample keys: {sample}")
+
+        inferred_input_dim = int(w_ih.shape[1])  # F
+        inferred_hidden_dim = int(w_ih.shape[0] // 4)  # H
+
+        # 3) head 가중치 찾기 (순차 확인 + suffix 검색)
+        head_w = None
+        for k in ("head.weight", "fc.weight", "classifier.weight", "model.head.weight"):
+            if k in state:
+                head_w = state[k]
+                break
+
+        if head_w is None:
+            for k in state.keys():
+                if k.endswith("head.weight") or k.endswith("fc.weight") or k.endswith("classifier.weight"):
+                    head_w = state[k]
+                    break
+        if head_w is None:
+            sample = list(state.keys())[:10]
+            raise ValueError(f"checkpoint missing classifier head weight. sample keys: {sample}")
+
+        inferred_num_classes = int(head_w.shape[0])  # C
+
+        model = PhaseLSTM(input_dim = inferred_input_dim, hidden_dim = inferred_hidden_dim, num_classes = inferred_num_classes)
+        model.load_state_dict(state, strict=False)
+        model.eval()
+
+        _PHASE_MODEL = TorchPhaseAdapter(
+            model=model,
+            device="cpu",
+            classes=[f"P{i}" for i in range(2, 10)],
+            input_dim=inferred_input_dim,
+        )
+        logger.info(
+            f"[phase] torch model loaded (F={inferred_input_dim}, H={inferred_hidden_dim}, "
+            f"C={inferred_num_classes}): {path}"
+        )
+        return _PHASE_MODEL
+
+    except Exception as e:
+        logger.warning(f"[phase] torch model load failed: {e}")
+        return None
 
 def _predict_phase_indices_ml(
     landmarks: List[List[Dict[str, Any]]],
@@ -165,12 +234,21 @@ def _featurize_sequence(landmarks: List[List[Dict[str, Any]]]) -> np.ndarray:
 
     arr = np.nan_to_num(arr, nan=0.0)
 
+    want = int(getattr(settings, "PHASE_MODEL_INPUT_DIM", 3))
+
+    if want <= 3:
+        # 3차원만 쓰는 모델: 바로 반환
+        return arr.astype(np.float32)[:, :want]
+
     # 1차/2차 차분
     d1 = np.vstack([np.zeros((1, 3)), np.diff(arr, axis=0)])
     d2 = np.vstack([np.zeros((1, 3)), np.diff(d1, axis=0)])
+    full = np.concatenate([arr, d1, d2], axis=1)  # (T, 9)
 
-    X = np.concatenate([arr, d1, d2], axis=1)  # (T, 9)
-    return X.astype(np.float32)
+    if want >= 9:
+        return full.astype(np.float32)[:, :want]
+
+    return full.astype(np.float32)[:, :want]
 
 
 def _indices_from_sequence_labels(preds: np.ndarray) -> Dict[str, Optional[int]]:
