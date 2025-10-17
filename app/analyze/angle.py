@@ -104,6 +104,7 @@ def angles_at_frame(
     # ── 추가: 어깨/엉덩이 회전 각도 + X-팩터 ─────────────────
     shoulder_turn = float("nan")
     hip_turn = float("nan")
+    x_factor = float("nan")
 
     try:
         rs = frame_landmarks[R_SHOULDER]
@@ -118,7 +119,12 @@ def angles_at_frame(
 
         shoulder_turn = _wrap_deg(shoulder_turn)
         hip_turn = _wrap_deg(hip_turn)
+
+        # X-팩터: 어깨 - 엉덩이 (부호 있는 최소차, [-180, 180]로 래핑)
         x_factor = _delta_deg(shoulder_turn, hip_turn)
+
+        # 도메인 안정화를 위해 클램프(권장 범위: [-60, 60])
+        x_factor = _clamp(x_factor, -60.0, 60.0)
     except Exception:
         x_factor = float('nan')
 
@@ -144,6 +150,7 @@ def _line_angle(p_left, p_right):
     except Exception:
         return float("nan")
 
+# Internal utils
 
 # 각도 정규화 유틸
 def _wrap_deg(a: float) -> float:
@@ -251,3 +258,9 @@ def _get(lm: Dict[str, float], k: str, default: float = 0.0) -> float:
         return float(v)
     except Exception:
         return default
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    """간단 클램프(LLM/후처리를 위한 안정화)"""
+    if not math.isfinite(v):
+        return v
+    return max(lo, min(hi, v))
