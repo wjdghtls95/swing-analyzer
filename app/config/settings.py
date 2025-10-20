@@ -5,7 +5,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-# helper (기존 그대로 사용)
+# helpers
 from app.config.env_utils import env_bool, env_path, env_list
 from app.analyze.constants import (
     DEFAULT_VIDEO_FPS,
@@ -44,8 +44,13 @@ ROOT: Path = find_project_root()
 #    ※ 기존 코드의 로직을 유지하되, 상대경로가 아닌 ROOT 기준으로 고정
 # ─────────────────────────────────────────────────────────
 _DEFAULT_ENV = os.getenv("ENV", "test")  # dev | test | prod 등
+
 _ENV_FILE_CANDIDATE = ROOT / f".env.{_DEFAULT_ENV}"
-_ENV_FILE = Path(os.getenv("ENV_FILE")).resolve() if os.getenv("ENV_FILE") else (_ENV_FILE_CANDIDATE if _ENV_FILE_CANDIDATE.exists() else (ROOT / ".env"))
+
+_ENV_FILE = Path(os.getenv("ENV_FILE")).resolve() \
+if os.getenv("ENV_FILE") \
+    else (_ENV_FILE_CANDIDATE if _ENV_FILE_CANDIDATE.exists() else (ROOT / ".env"))
+
 load_dotenv(dotenv_path=_ENV_FILE, override=False)
 
 class Settings:
@@ -55,7 +60,7 @@ class Settings:
     DEBUG_MODE: bool = env_bool("DEBUG_MODE", False)
 
     # ── Paths ─────────────────────────────────────────────
-    # ✔ 하드코딩 제거: ROOT는 find_project_root() 결과
+    # 하드코딩 제거: ROOT는 find_project_root() 결과
     ROOT: Path = ROOT
     # 아래 4개는 네가 올린 ResourceFinder가 기대하는 필드임
     CONFIG_DIR: Path = env_path("CONFIG_DIR", ROOT / "app" / "config")
@@ -65,6 +70,10 @@ class Settings:
 
     UPLOADS_DIR: Path = env_path("UPLOADS_DIR", ROOT / "uploads")
     OUTPUT_DIR: Path  = env_path("OUTPUT_DIR",  ROOT / "data" / "output")
+
+    # 전처리/다운로드 표준 디렉터리
+    NORMALIZED_DIR: Path = env_path("NORMALIZED_DIR", ROOT / "normalized")
+    DOWNLOADS_DIR: Path = env_path("DOWNLOADS_DIR", ROOT / "downloads")
 
     # ── Video Normalize Params ────────────────────────────
     VIDEO_FPS: int = int(os.getenv("VIDEO_FPS", DEFAULT_VIDEO_FPS))
@@ -116,10 +125,11 @@ class Settings:
 
     def __init__(self) -> None:
         # 디렉토리 존재 보장 (앱 시작 시 1회)
-        self.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-        self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        self.LOG_DIR.mkdir(parents=True, exist_ok=True)
-        self.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        for dir in [
+            self.UPLOADS_DIR, self.OUTPUT_DIR, self.LOG_DIR,
+            self.ARTIFACTS_DIR, self.NORMALIZED_DIR, self.DOWNLOADS_DIR
+        ]:
+            dir.mkdir(parents=True, exist_ok=True)
 
 # 전역 싱글톤처럼 사용
 settings = Settings()

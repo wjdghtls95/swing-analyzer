@@ -3,7 +3,6 @@
 - 수학/기하(각도 계산) 로직을 분석/피드백(service)에서 분리하면 테스트/재사용이 쉬움.
 - 팔꿈치/무릎/척추 등 모든 관절 각도 계산에 공통 패턴을 적용.
 """
-
 from typing import List, Dict, Sequence, Tuple, Optional
 import math
 import numpy as np
@@ -15,7 +14,6 @@ from app.analyze.constants import (
     RIGHT_ARM, LEFT_ARM, RIGHT_LEG, LEFT_LEG,
 )
 
-# 시퀀스 평균 각도 (기존 파이프라인에서 사용)
 def calculate_elbow_angle(
     landmarks: List[List[Dict[str, float]]],
     side: str = "right",
@@ -45,7 +43,6 @@ def calculate_knee_angle(
     triplet = RIGHT_LEG if side.lower() == "right" else LEFT_LEG
     return _sequence_mean_angle(landmarks, triplet, min_vis=min_vis)
 
-# 단일 프레임에서 주요 각도들 뽑기
 def angles_at_frame(
     frame_landmarks: Sequence[Dict[str, float]],
     side: str = "right",
@@ -79,24 +76,19 @@ def angles_at_frame(
         rh = frame_landmarks[R_HIP]
         lh = frame_landmarks[L_HIP]
 
-        # visibility 체크 (있을 때만)
-        vis_ok = True
-        for lm in (rs, ls, rh, lh):
-            v = lm.get("visibility", 1.0)
-            if v < min_vis:
-                vis_ok = False
-                break
 
-        if vis_ok:
-            mid_sh = ((_get(lm=rs, k="x") + _get(lm=ls, k="x")) / 2.0,
-                      (_get(lm=rs, k="y") + _get(lm=ls, k="y")) / 2.0)
-            mid_hip = ((_get(lm=rh, k="x") + _get(lm=lh, k="x")) / 2.0,
-                       (_get(lm=rh, k="y") + _get(lm=lh, k="y")) / 2.0)
+        if all(lm.get("visibility", 1.0) >= min_vis for lm in (rs, ls, rh, lh)):
+            mid_sh = ((_get(rs, "x") + _get(ls, "x")) / 2.0,
+                      (_get(rs, "y") + _get(ls, "y")) / 2.0)
+
+            mid_hip = ((_get(rh, "x") + _get(lh, "x")) / 2.0,
+                       (_get(rh, "y") + _get(lh, "y")) / 2.0)
+
             vx, vy = (mid_hip[0] - mid_sh[0], mid_hip[1] - mid_sh[1])
-            # 수평 기준 각도
-            deg_h = math.degrees(math.atan2(vy, vx))
-            # 수직 기준 절대 기울기(0=수직, 90=수평에 가까움)
-            spine_tilt = abs(90.0 - abs(deg_h))
+
+            deg_h = math.degrees(math.atan2(vy, vx))          # 수평기준
+
+            spine_tilt = abs(90.0 - abs(deg_h))               # 수직기준 절대 기울기
             spine_tilt = float(np.round(spine_tilt, 1))
     except Exception:
         spine_tilt = float("nan")
@@ -120,7 +112,7 @@ def angles_at_frame(
         shoulder_turn = _wrap_deg(shoulder_turn)
         hip_turn = _wrap_deg(hip_turn)
 
-        # X-팩터: 어깨 - 엉덩이 (부호 있는 최소차, [-180, 180]로 래핑)
+        # X-팩터 계산: 어깨 - 엉덩이 (부호 있는 최소차, [-180, 180]로 래핑)
         x_factor = _delta_deg(shoulder_turn, hip_turn)
 
         # 도메인 안정화를 위해 클램프(권장 범위: [-60, 60])
@@ -140,37 +132,7 @@ def angles_at_frame(
 
     return base
 
-# 좌우 두 점으로 라인 각도(수평 = 0°, 시계방향 양수)
-def _line_angle(p_left, p_right):
-    try:
-        dx = _get(p_right, "x") - _get(p_left, "x")
-        dy = _get(p_right, "y") - _get(p_left, "y")
-        # 화면 좌표(y 아래로 증가) 고려해서 -dy
-        return math.degrees(math.atan2(-dy, dx))
-    except Exception:
-        return float("nan")
-
 # Internal utils
-
-# 각도 정규화 유틸
-def _wrap_deg(a: float) -> float:
-    """임의의 각도를 [-180, 180]로 래핑"""
-    if not math.isfinite(a):
-        return float("nan")
-    a = (a + 180.0) % 360.0 - 180.0
-    if a == -180.0:
-        a = 180.0
-    return a
-
-def _delta_deg(a: float, b: float) -> float:
-    """두 각도의 최소 부호 있는 차이( a - b ), 결과 [-180, 180]"""
-    if not (math.isfinite(a) and math.isfinite(b)):
-        return float("nan")
-    d = (a - b + 180.0) % 360.0 - 180.0
-    if d == -180.0:
-        d = 180.0
-    return d
-
 # 내부 유틸 (모듈 외부로 공개하지 않음)
 def _sequence_mean_angle(
     sequence: List[List[Dict[str, float]]],
@@ -258,6 +220,36 @@ def _get(lm: Dict[str, float], k: str, default: float = 0.0) -> float:
         return float(v)
     except Exception:
         return default
+
+# 좌우 두 점으로 라인 각도(수평 = 0°, 시계방향 양수)
+def _line_angle(p_left, p_right):
+    try:
+        dx = _get(p_right, "x") - _get(p_left, "x")
+        dy = _get(p_right, "y") - _get(p_left, "y")
+        # 화면 좌표(y 아래로 증가) 고려해서 -dy
+        return math.degrees(math.atan2(-dy, dx))
+    except Exception:
+        return float("nan")
+
+# 각도 정규화 유틸
+def _wrap_deg(a: float) -> float:
+    """임의의 각도를 [-180, 180]로 래핑"""
+    if not math.isfinite(a):
+        return float("nan")
+    a = (a + 180.0) % 360.0 - 180.0
+    if a == -180.0:
+        a = 180.0
+    return a
+
+def _delta_deg(a: float, b: float) -> float:
+    """두 각도의 최소 부호 있는 차이( a - b ), 결과 [-180, 180]"""
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return float("nan")
+    d = (a - b + 180.0) % 360.0 - 180.0
+    if d == -180.0:
+        d = 180.0
+    return d
+
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     """간단 클램프(LLM/후처리를 위한 안정화)"""

@@ -1,8 +1,3 @@
-# app/utils/resource_finder.py
-# 목적:
-# - settings와 연동된 중앙 경로 헬퍼
-# - under_config/data/artifacts/logs, glob, 최신 파일, JSON 편의
-
 from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Optional, Union, List
@@ -14,9 +9,9 @@ from app.config.settings import settings  # Settings 싱글톤 사용
 
 
 class ResourceFinder:
+    """중앙 경로 헬퍼: config/data/logs/artifacts/thresholds 관리"""
     def __init__(self):
         self.root: Path = settings.ROOT
-        self.data: Path = self.root / "dataset" if isinstance(settings.ROOT, Path) else Path(settings.ROOT) / "dataset"
         # settings에 상대경로로 설정되어 있으므로 아래처럼 정확히 결합
         self.data = self.root / settings.DATA_DIR
         self.config = self.root / settings.CONFIG_DIR

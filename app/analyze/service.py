@@ -23,8 +23,7 @@ if not logging.getLogger().handlers:
 
 # ---------- 내부 로깅 디렉토리 ----------
 _LOG_DIR = settings.LOG_DIR
-os.makedirs(_LOG_DIR, exist_ok=True)
-
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------- 메인 파이프라인 ----------
 def analyze_swing(
@@ -40,6 +39,7 @@ def analyze_swing(
     # 1) 전처리
     try:
         norm_path, used_mode, preprocess_ms = _do_preprocess(file_path, norm_mode)
+        norm_path = str(norm_path)
     except FileNotFoundError as e:
         raise HTTPException(status_code=422, detail=f"Input not found: {e}")
     except RuntimeError as e:
@@ -63,7 +63,7 @@ def analyze_swing(
     phase_method = getattr(settings, "PHASE_METHOD", "auto")
     phases = detect_phases(landmarks, phase_method)
 
-    # ▼ 추가: 페이즈 인덱스 중복 제거(P2→P9 우선 채택)
+    # 동알 페이즈 인덱스 중복 제거(P2 → P9 우선 채택)
     phases = _dedupe_phases(phases)
 
     phase_metrics: Dict[str, Dict[str, float]] = {}
@@ -109,14 +109,14 @@ def analyze_swing(
         metrics=metrics,            # FE가 안 쓰면 results_builder에서 빼도 OK
         phases=phases,
         phase_metrics=phase_metrics,
-        diagnosis_by_phase=diagnosis_by_phase,  # ⬅ 페이즈별만 (AVG 없음)
+        diagnosis_by_phase=diagnosis_by_phase,  # 페이즈별만 (AVG 없음)
     )
 
     # 내부 로깅
     try:
-        log_path = os.path.join(_LOG_DIR, f"{swing_id}_{uuid.uuid4().hex[:6]}.json")
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        log_path = settings.LOG_DIR / f"{swing_id}_{uuid.uuid4().hex[:6]}.json"
+        with log_path.open("w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii = False, indent = 2)
     except Exception as e:
         logger.debug(f"[LOG] write failed: {e}")
 
@@ -129,13 +129,15 @@ def analyze_from_url(
     min_vis: float = 0.5,
     norm_mode: NormMode = NormMode.auto
 ) -> dict:
-    os.makedirs("downloads", exist_ok=True)
+    dst_dir = settings.DOWNLOADS_DIR
+    dst_dir.mkdir(parents = True, exist_ok = True)
     filename = f"downloads/{uuid.uuid4().hex[:8]}.mp4"
+
     with requests.get(s3_url, stream=True) as r:
         r.raise_for_status()
         with open(filename, "wb") as f:
             shutil.copyfileobj(r.raw, f)
-    return analyze_swing(filename, side=side, min_vis=min_vis, norm_mode=norm_mode)
+    return analyze_swing(str(filename), side=side, min_vis=min_vis, norm_mode=norm_mode)
 
 
 # ------------ Private ------------
@@ -175,9 +177,9 @@ def _do_preprocess(src_path: str, mode: NormMode):
       - pro: HW 인코딩/스마트카피
       - auto: pro→실패시 basic
     """
-    dst_dir = os.path.join("normalized")
-    os.makedirs(dst_dir, exist_ok=True)
-    dst_path = os.path.join(dst_dir, f"{uuid.uuid4().hex[:8]}.mp4")
+    dst_dir = settings.NORMALIZED_DIR
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst_path = dst_dir / f"{uuid.uuid4().hex[:8]}.mp4"
 
     t0 = time.perf_counter()
     used_mode = None
@@ -200,16 +202,18 @@ def _do_preprocess(src_path: str, mode: NormMode):
             except Exception:
                 normalize_video(src_path, dst_path, fps=fps, height=height, mirror=mirror)
                 used_mode = "basic"
+
     except FileNotFoundError as e:
         raise HTTPException(status_code=422, detail=f"input not found: {e}") from e
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"preprocess failed: {e}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"unexpected preprocess error: {e}") from e
+
     finally:
         ms = int((time.perf_counter() - t0) * 1000)
 
-    return dst_path, used_mode, ms
+    return str(dst_path), used_mode, ms
 
 
 def _dedupe_phases(phases: Dict[str, int]) -> Dict[str, int]:

@@ -12,6 +12,12 @@ METRIC_RANGES = settings.METRIC_RANGES
 MIN_SAMPLE = settings.MIN_SAMPLE
 MAX_SAMPLE = settings.MAX_SAMPLE
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # 있으면 읽고, 없으면 무시
+except Exception:
+    pass
+
 
 def to_numeric_series(series: pd.Series) -> pd.Series:
     """문자/NaN 제거 후 float 시리즈로 변환"""
