@@ -1,45 +1,69 @@
-"""
-logs/*.json → ML 학습용 데이터셋으로 변환
-
-logs/*.json -> 프레임별 특성 X, 라벨 y 생성
-- X: (T, 9)  = [elbow, knee, spine_tilt, d1_elbow, d1_knee, d1_spine, d2_elbow, d2_knee, d2_spine]
-- y: (T,)    = {0..8}  # 0:P2, 1:P3, ..., 7:P9, 8:None(라벨 부여 실패)
-
-저장:
-  artifacts/datasets/phase_X.pt
-  artifacts/datasets/phase_y.pt
-"""
-
-import os, glob, json
-import pandas as pd
+# scripts/datasets/build_phase_dataset.py
+from __future__ import annotations
+import json, glob
 from pathlib import Path
+import pandas as pd
 
-OUT_DIR = Path("artifacts/datasets")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+from app.config.settings import settings
+from app.utils.resource_finder import rf
 
 def main():
-    files = glob.glob("logs/*.json")
+    # 1) 입력 로그 경로: settings.LOG_DIR/*.json
+    log_glob = str(settings.LOG_DIR / "*.json")
+    files = glob.glob(log_glob)
     rows = []
-    for f in files:
-        with open(f, "r", encoding="utf-8") as fp:
-            d = json.load(fp)
 
-        # features: elbow, knee, spine_tilt (있을 경우)
-        for ph, vals in (d.get("phase_metrics") or {}).items():
-            row = {
-                "swingId": d.get("swingId"),
-                "phase": ph,
+    # 2) 로그 → 행 변환
+    for fp in files:
+        try:
+            d = json.loads(Path(fp).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        swing_id = d.get("swingId")
+        club = (d.get("input") or {}).get("club")
+        phase_metrics = d.get("phase_metrics") or {}
+
+        # 각 phase별로 한 줄씩 적재
+        for ph, vals in phase_metrics.items():
+            rows.append({
+                "swingId": swing_id,
+                "phase": ph,  # 예: P2..P9
+                "club": str(club) if club is not None else None,
                 "elbow": vals.get("elbow"),
                 "knee": vals.get("knee"),
                 "spine_tilt": vals.get("spine_tilt"),
-                "club": d.get("input", {}).get("club"),
-            }
-            rows.append(row)
+                "shoulder_turn": vals.get("shoulder_turn"),
+                "hip_turn": vals.get("hip_turn"),
+                "x_factor": vals.get("x_factor"),
+            })
 
     df = pd.DataFrame(rows)
-    out_csv = OUT_DIR / "phase_dataset.csv"
+
+    # 3) 최소 컬럼 보장 및 정리
+    needed_cols = ["swingId", "phase", "club",
+                   "elbow", "knee", "spine_tilt",
+                   "shoulder_turn", "hip_turn", "x_factor"]
+    for c in needed_cols:
+        if c not in df.columns:
+            df[c] = pd.NA
+
+    # 4) (선택) 물리 범위 가드: settings.METRIC_RANGES 적용
+    rng = settings.METRIC_RANGES
+    for m in ["elbow", "knee", "spine_tilt", "shoulder_turn", "hip_turn", "x_factor"]:
+        if m in df.columns:
+            s = pd.to_numeric(df[m], errors="coerce")
+            lo, hi = rng.get(m, (None, None))
+            if lo is not None and hi is not None:
+                s = s.clip(lo, hi)
+            df[m] = s
+
+    # 5) 출력: artifacts/datasets/phase_dataset.csv
+    out_dir = settings.DATASETS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_csv = out_dir / "phase_dataset.csv"
     df.to_csv(out_csv, index=False)
-    print(f"[build_phase_dataset] saved: {out_csv}, rows={len(df)}")
+    print(f"[build_phase_dataset] saved: {out_csv} rows={len(df)}")
 
 if __name__ == "__main__":
     main()

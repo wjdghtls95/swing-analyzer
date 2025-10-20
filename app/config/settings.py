@@ -14,21 +14,18 @@ from app.analyze.constants import (
 )
 
 # ─────────────────────────────────────────────────────────
-# 0) 루트 탐색 (하드코딩 제거)
-#    - .git / pyproject.toml / requirements.txt 탐색
-#    - 다 없으면 ENV: BASE_DIR 사용
-#    - 그래도 없으면 명확히 예외 (의도치 않은 / 루트 방지)
+# Project root 탐색
+#   - .git / pyproject.toml / requirements.txt 중 하나가 보이는 최상단을 루트로 간주
+#   - 실패 시 BASE_DIR 환경변수 사용
 # ─────────────────────────────────────────────────────────
 def find_project_root() -> Path:
     cur = Path(__file__).resolve()
     for parent in cur.parents:
-        if any((parent / marker).exists() for marker in [".git", "pyproject.toml", "requirements.txt"]):
+        if any((parent / m).exists() for m in (".git", "pyproject.toml", "requirements.txt")):
             return parent
-
     env_root = os.getenv("BASE_DIR")
     if env_root:
         return Path(env_root).resolve()
-
     raise RuntimeError(
         "프로젝트 루트를 찾을 수 없습니다. "
         "루트에 .git/pyproject.toml/requirements.txt 중 하나를 두거나, "
@@ -38,51 +35,53 @@ def find_project_root() -> Path:
 ROOT: Path = find_project_root()
 
 # ─────────────────────────────────────────────────────────
-# 1) .env 로딩 전략 (실행 환경에 따라 자동 선택)
-#    - ENV_FILE 가 지정되면 그걸 사용
-#    - 아니면 ROOT 기준 .env.<ENV> 가 있으면 사용, 없으면 .env
-#    ※ 기존 코드의 로직을 유지하되, 상대경로가 아닌 ROOT 기준으로 고정
+# .env 로딩
+#   - ENV_FILE 지정 시 우선
+#   - 없으면 ROOT/.env.<ENV> → 없으면 ROOT/.env
 # ─────────────────────────────────────────────────────────
-_DEFAULT_ENV = os.getenv("ENV", "test")  # dev | test | prod 등
-
-_ENV_FILE_CANDIDATE = ROOT / f".env.{_DEFAULT_ENV}"
-
-_ENV_FILE = Path(os.getenv("ENV_FILE")).resolve() \
-if os.getenv("ENV_FILE") \
-    else (_ENV_FILE_CANDIDATE if _ENV_FILE_CANDIDATE.exists() else (ROOT / ".env"))
-
+_DEFAULT_ENV = os.getenv("ENV", "test")
+_env_file_candidate = ROOT / f".env.{_DEFAULT_ENV}"
+_ENV_FILE = (
+    Path(os.getenv("ENV_FILE")).resolve()
+    if os.getenv("ENV_FILE")
+    else (_env_file_candidate if _env_file_candidate.exists() else (ROOT / ".env"))
+)
 load_dotenv(dotenv_path=_ENV_FILE, override=False)
+
 
 class Settings:
     # ── App / Runtime ─────────────────────────────────────
-    ENV: str = os.getenv("ENV", _DEFAULT_ENV)            # dev|test|prod
+    ENV: str = os.getenv("ENV", _DEFAULT_ENV)
     FASTAPI_PORT: int = int(os.getenv("FASTAPI_PORT", 8000))
     DEBUG_MODE: bool = env_bool("DEBUG_MODE", False)
 
-    # ── Paths ─────────────────────────────────────────────
-    # 하드코딩 제거: ROOT는 find_project_root() 결과
+    # ── Base Paths ────────────────────────────────────────
     ROOT: Path = ROOT
-    # 아래 4개는 네가 올린 ResourceFinder가 기대하는 필드임
     CONFIG_DIR: Path = env_path("CONFIG_DIR", ROOT / "app" / "config")
-    DATA_DIR: Path = env_path("DATA_DIR", ROOT / "dataset")
-    ARTIFACTS_DIR: Path = env_path("ARTIFACTS_DIR", ROOT / "artifacts")
-    LOG_DIR: Path = env_path("LOG_DIR", ROOT / "logs")
+    DATA_DIR: Path = env_path("DATA_DIR", ROOT / "data")
 
+    # ── Standard data subdirs (모두 DATA_DIR 기준) ────────
+    VIDEOS_DIR: Path = env_path("VIDEOS_DIR", DATA_DIR / "videos")
+    NORMALIZED_DIR: Path = env_path("NORMALIZED_DIR", DATA_DIR / "normalized")
+    DOWNLOADS_DIR: Path = env_path("DOWNLOADS_DIR", DATA_DIR / "downloads")
+    LOG_DIR: Path = env_path("LOG_DIR", DATA_DIR / "logs")
+    OUTPUT_DIR: Path = env_path("OUTPUT_DIR", DATA_DIR / "output")
+    DATASETS_DIR: Path = env_path("DATASETS_DIR", DATA_DIR / "datasets")
+    THRESHOLDS_DIR: Path = env_path("THRESHOLDS_DIR", DATA_DIR / "thresholds")
+    THRESHOLDS_ARCHIVE_DIR: Path = THRESHOLDS_DIR / "archive"
+    REPORTS_DIR: Path = env_path("REPORTS_DIR", DATA_DIR / "reports")
+
+    # 업로드(외부 입력) 기본 폴더
     UPLOADS_DIR: Path = env_path("UPLOADS_DIR", ROOT / "uploads")
-    OUTPUT_DIR: Path  = env_path("OUTPUT_DIR",  ROOT / "data" / "output")
-
-    # 전처리/다운로드 표준 디렉터리
-    NORMALIZED_DIR: Path = env_path("NORMALIZED_DIR", ROOT / "normalized")
-    DOWNLOADS_DIR: Path = env_path("DOWNLOADS_DIR", ROOT / "downloads")
 
     # ── Video Normalize Params ────────────────────────────
     VIDEO_FPS: int = int(os.getenv("VIDEO_FPS", DEFAULT_VIDEO_FPS))
     VIDEO_HEIGHT: int = int(os.getenv("VIDEO_HEIGHT", DEFAULT_VIDEO_HEIGHT))
-    VIDEO_MIRROR: bool = env_bool("VIDEO_MIRROR", DEFAULT_VIDEO_MIRROR)  # 좌/우타, 카메라 각 보정시
+    VIDEO_MIRROR: bool = env_bool("VIDEO_MIRROR", DEFAULT_VIDEO_MIRROR)
 
-    # ── Phase detection ──────
+    # ── Phase detection ───────────────────────────────────
     PHASE_METHOD: str = os.getenv("PHASE_METHOD", "auto")  # "auto" | "ml" | "rule"
-    PHASE_MODEL_PATH: Optional[str] = os.getenv("PHASE_MODEL_PATH")  # 없으면 rule fallback
+    PHASE_MODEL_PATH: Optional[str] = os.getenv("PHASE_MODEL_PATH")
     PHASE_MODEL_INPUT_DIM: int = 3
     PHASE_MODEL_HIDDEN_DIM: int = 32
     PHASE_MODEL_NUM_CLASSES: int = 8
@@ -90,16 +89,14 @@ class Settings:
     # ── Threshold / 통계용 공용 키 ───────────────────────
     THRESH_METRICS = env_list(
         "THRESH_METRICS",
-        ["elbow", "knee", "spine_tilt", "shoulder_turn", "hip_turn", "x_factor"]
+        ["elbow", "knee", "spine_tilt", "shoulder_turn", "hip_turn", "x_factor"],
     )
-
     THRESH_PHASES = env_list(
         "THRESH_PHASES",
-        ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"]
+        ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"],
     )
 
-    # ── Metrics Range & Sample Guards ─────────────────────────
-    # 물리적 범위 (인체 한계 + 포즈 추정 오차 허용)
+    # ── Metrics Range & Sample Guards ─────────────────────
     METRIC_RANGES = {
         "elbow": (0, 180),
         "knee": (0, 180),
@@ -108,28 +105,30 @@ class Settings:
         "hip_turn": (-180, 180),
         "x_factor": (-60, 60),
     }
+    MIN_SAMPLE = 30
+    MAX_SAMPLE = 100
 
-    # 표본 가드: thresholds 생성시 기준
-    MIN_SAMPLE = 30     # 표본 n < 30 → skip
-    MAX_SAMPLE = 100    # 표본 n > 100 → 최근 100개만 사용
-
-    # 명시적 파일/데이터셋 경로 (없으면 finder가 자동탐색)
+    # ── 명시적 파일/데이터셋 경로(선택) ───────────────────
     THRESHOLDS_FILE: Optional[str] = os.getenv("THRESHOLDS_FILE")
     DATASET_PATH: Optional[str] = os.getenv("DATASET_PATH")
 
-    # ── (옵션) 외부 연동/스토리지/DB/큐 등 ───────────────
-    # DATABASE_URL: str | None = os.getenv("DATABASE_URL")
-    # REDIS_URL: str | None = os.getenv("REDIS_URL")
-    # PLATFORM_API_BASE: str | None = os.getenv("PLATFORM_API_BASE")
-    # PLATFORM_API_TOKEN: str | None = os.getenv("PLATFORM_API_TOKEN")
-
     def __init__(self) -> None:
-        # 디렉토리 존재 보장 (앱 시작 시 1회)
-        for dir in [
-            self.UPLOADS_DIR, self.OUTPUT_DIR, self.LOG_DIR,
-            self.ARTIFACTS_DIR, self.NORMALIZED_DIR, self.DOWNLOADS_DIR
-        ]:
-            dir.mkdir(parents=True, exist_ok=True)
+        # 자주 쓰는 디렉토리 존재 보장
+        dirs = [
+            self.UPLOADS_DIR,
+            self.LOG_DIR,
+            self.OUTPUT_DIR,
+            self.DOWNLOADS_DIR,
+            self.NORMALIZED_DIR,
+            self.DATASETS_DIR,
+            self.THRESHOLDS_DIR,
+            self.THRESHOLDS_ARCHIVE_DIR,
+            self.REPORTS_DIR,
+            self.VIDEOS_DIR,
+        ]
+        for d in dirs:
+            Path(d).mkdir(parents=True, exist_ok=True)
+
 
 # 전역 싱글톤처럼 사용
 settings = Settings()

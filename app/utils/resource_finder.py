@@ -9,17 +9,15 @@ from app.config.settings import settings  # Settings 싱글톤 사용
 
 
 class ResourceFinder:
-    """중앙 경로 헬퍼: config/data/logs/artifacts/thresholds 관리"""
+    """중앙 경로 헬퍼 thresholds 관리"""
     def __init__(self):
         self.root: Path = settings.ROOT
         # settings에 상대경로로 설정되어 있으므로 아래처럼 정확히 결합
         self.data = self.root / settings.DATA_DIR
         self.config = self.root / settings.CONFIG_DIR
-        self.artifacts = self.root / settings.ARTIFACTS_DIR
         self.logs = self.root / settings.LOG_DIR
 
         # 로그/아티팩트 폴더는 기본 생성
-        self.artifacts.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
 
     # ----- 하위 경로 -----
@@ -31,9 +29,6 @@ class ResourceFinder:
 
     def under_config(self, *parts: Union[str, Path]) -> Path:
         return (self.config.joinpath(*parts)).resolve()
-
-    def under_artifacts(self, *parts: Union[str, Path]) -> Path:
-        return (self.artifacts.joinpath(*parts)).resolve()
 
     def under_logs(self, *parts: Union[str, Path]) -> Path:
         return (self.logs.joinpath(*parts)).resolve()

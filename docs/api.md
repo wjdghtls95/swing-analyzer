@@ -21,34 +21,103 @@ curl -X POST "http://localhost:your_port/analyze" \
 
 ### Response 예시 
 ```json
+// ------ Response Body ------ 
 {
-  "swingId": "cc17812d",
-  "side": "right",
-  "min_vis": 0.5,
-  "club": "iron",
-  "preprocessMode": "pro",
-  "preprocessMs": 832,
-  "detectedFrames": 67,
-  "totalFrames": 67,
-  "detectionRate": 1.0,
+  "swingId": "19721cda",
+  "input": {
+    "filePath": "uploads/19721cda_골프 스윙.mp4",
+    "side": "right",
+    "club": "iron"
+  },
+  "env": "test",
+  "appVersion": "unknown",
+  "timestamp": 1760899118,
+  "preprocess": {
+    "mode": "pro",
+    "ms": 7022,
+    "fps": 30,
+    "height": 720,
+    "mirror": false
+  },
+  "pose": {
+    "frameStep": 3,
+    "minVisibility": 0.5
+  },
+  "phase": {
+    "method": "ml"
+  },
+  "detectedFrames": 80,
+  "totalFrames": 80,
+  "detectionRate": 1,
   "metrics": {
-    "elbow_avg": 133.8,
-    "knee_avg": 130.8
+    "elbow_avg": 110.9,
+    "knee_avg": 128.4
   },
-  "phases": { "P2": 0, "P3": 8, "P4": 16, "P5": 24, "P6": 32, "P7": 40, "P8": 48, "P9": 56 },
+  "phases": {
+    "P2": 0,
+    "P3": 62,
+    "P5": 76,
+    "P6": 77,
+    "P7": 19,
+    "P8": 2,
+    "P9": 41
+  },
   "phase_metrics": {
-    "P4": { "elbow": 108.4, "knee": 77.1, "spine_tilt": 0.5 },
-    "P7": { "elbow": 151.6, "knee": 149.7, "spine_tilt": 12.7 }
-  },
-  "diagnosis_by_phase": {
-    "AVG": { "elbow_diag": "팔꿈치 각도가 적정 범위입니다(아이언 기준)." },
-    "P4": {
-      "elbow_diag": "백스윙 톱(P4)에서 팔꿈치가 과도하게 굽혀졌습니다.",
-      "spine_tilt_diag": "P4에서 척추 기울기가 거의 없어 상체가 들렸습니다."
+    "P2": {
+      "elbow": 100.6,
+      "knee": 60.7,
+      "spine_tilt": 1.4,
+      "shoulder_turn": -178.2,
+      "hip_turn": 178.7,
+      "x_factor": 3.1
+    },
+    "P3": {
+      "elbow": 113.3,
+      "knee": 152,
+      "spine_tilt": 21.8,
+      "shoulder_turn": 5.8,
+      "hip_turn": -172.7,
+      "x_factor": 60
+    },
+    "P5": {
+      "elbow": 8.7,
+      "knee": 145.9,
+      "spine_tilt": 15.8,
+      "shoulder_turn": 8.7,
+      "hip_turn": -173.3,
+      "x_factor": -60
+    },
+    "P6": {
+      "elbow": 28.9,
+      "knee": 138.5,
+      "spine_tilt": 15.9,
+      "shoulder_turn": 11.6,
+      "hip_turn": -173.3,
+      "x_factor": -60
     },
     "P7": {
-      "elbow_diag": "임팩트(P7) 팔꿈치 각도가 적정 범위입니다.",
-      "knee_diag": "임팩트(P7) 무릎 각도가 적정 범위입니다."
+      "elbow": 85.6,
+      "knee": 32.1,
+      "spine_tilt": 2.4,
+      "shoulder_turn": 179.8,
+      "hip_turn": 178.7,
+      "x_factor": 1
+    },
+    "P8": {
+      "elbow": 93.3,
+      "knee": 136.2,
+      "spine_tilt": 3,
+      "shoulder_turn": -178.1,
+      "hip_turn": 177.8,
+      "x_factor": 4.1
+    },
+    "P9": {
+      "elbow": 172.5,
+      "knee": 144.1,
+      "spine_tilt": 3.4,
+      "shoulder_turn": 179.9,
+      "hip_turn": 177.8,
+      "x_factor": 2.1
     }
   }
 }
