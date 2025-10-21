@@ -110,6 +110,9 @@ rotate:
 	  [ -f "$$src" ] && mv "$$src" "$$dst" && echo "→ moved: $$f -> $$dst" || true; \
 	done
 
+# thresholds 수치 검증
+validate-thresholds:
+	$(PY) -m scripts.thresholds.validate_thresholds $(OUTDIR)/thresholds_current.json
 
 # dataset:
 # - data/logs/*.json → data/datasets/phase_dataset.csv 재생성

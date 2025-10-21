@@ -11,13 +11,13 @@ from app.analyze.service import analyze_swing, analyze_from_url
 from app.analyze.schema import AnalyzeResponse, UrlRequest, NormMode, ClubType
 import os, shutil, uuid
 
-router = APIRouter()
+router = APIRouter(prefix="/analyze", tags=["Golf Swings"])
 
 """
    왜 response_model을 없앴나?
-   - B안(요약 응답)에서는 service가 dict로 필요한 키만 반환한다.
-   - Pydantic 모델이 끼면 모델에 없는 키가 잘리거나 None으로 들어가 null이 생긴다.
-   - dict 그대로 반환하면 service의 결과를 있는 그대로 전달할 수 있다.
+   - B안(요약 응답)에서는 service가 dict로 필요한 키만 반환
+   - Pydantic 모델이 끼면 모델에 없는 키가 잘리거나 None으로 들어가 null이 생김
+   - dict 그대로 반환하면 service의 결과를 있는 그대로 전달
 """
 
 
@@ -54,3 +54,6 @@ async def analyze_url(
         min_vis=min_vis,
         norm_mode=(data.norm_mode or NormMode.auto),
     )
+
+
+ROUTER = [router]

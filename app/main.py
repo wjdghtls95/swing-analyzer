@@ -1,17 +1,14 @@
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
-from app.api.router import router as analyze_router
+
+from app.api import include_all_routers
 from app.config.settings import settings
 
+# 앱 생성
 app = FastAPI(debug=settings.DEBUG_MODE)
 
-
-@app.get("/health", tags=["Health Check"])
-def health_check():
-    return {"status": "ok"}
-
-
-app.include_router(analyze_router, prefix="/analyze")
+# 자동으로 app/api/* 모듈을 스캔해 라우터 전부 등록
+include_all_routers(app)
 
 app.openapi = lambda: get_openapi(
     title="AI Swing Analysis API",

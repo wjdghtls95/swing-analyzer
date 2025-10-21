@@ -1,5 +1,5 @@
 """
- LSTM 모델 정의
+LSTM 모델 정의
 """
 
 import torch

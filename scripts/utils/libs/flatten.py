@@ -3,7 +3,7 @@ from .jsonio import safe_get
 
 
 def flatten_phase_metrics(
-    pm: Optional[Dict[str, Dict[str, float]]]
+    pm: Optional[Dict[str, Dict[str, float]]],
 ) -> Dict[str, float]:
     flat = {}
     for ph, vals in (pm or {}).items():
