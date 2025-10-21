@@ -1,7 +1,7 @@
 # =============================================================================
 # Makefile — swing-analyzer (자주 쓰는 것 위, 가끔 쓰는 것 아래)
 #
-# 가장 많이 쓰는 흐름:
+# ✅ 가장 많이 쓰는 흐름:
 #   1) make release BY=phase KEEP=5 AUTO_COMMIT=1
 #      - 최신 thresholds 생성(phase/club/overall 선택 가능)
 #      - thresholds_current.json 심링크 갱신
@@ -24,6 +24,7 @@
 #      make fmt / make lint    # 코드 포맷/린트 (선택)
 # =============================================================================
 
+
 # ====== 공통 변수 (CLI에서 override 가능: 예) make release BY=club KEEP=3) ======
 PY        ?= python            # 파이썬 실행기
 APP       ?= app.main:app      # uvicorn 엔트리포인트 (FastAPI)
@@ -34,17 +35,30 @@ CSV       ?= data/datasets/phase_dataset.csv   # thresholds 입력 CSV
 OUTDIR    ?= app/config                        # thresholds 산출 폴더
 NAMEFMT   ?= {date}_thresholds.json            # rotate 시 날짜 파일 패턴
 BY        ?= phase                             # phase | club | overall
-KEEP      ?= 5                                 # current 제외, 보관할 날짜 파일 개수
-AUTO_COMMIT ?= 0                               # 1이면 release 시 자동 커밋
 
-SAMPLE_MP4 ?= uploads/sample.mp4               # analyze-sample 입력 파일
-CLUB       ?= iron
-SIDE       ?= right
+# KEEP: 보관할 날짜 파일 개수 (current 제외)
+#  - CLI → make release KEEP=7
+#  - .env → THRESH_KEEP=5
+#  - 기본값 5
+ifndef KEEP
+  ifdef THRESH_KEEP
+    KEEP := $(THRESH_KEEP)
+  else
+    KEEP := 5
+  endif
+endif
+
+AUTO_COMMIT ?= 0                               # 1이면 release 시 자동 커밋
+SAMPLE_MP4  ?= uploads/sample.mp4               # analyze-sample 입력 파일
+CLUB        ?= iron
+SIDE        ?= right
+
 
 # ====== 타겟 선언 ======
 .PHONY: help release rotate dataset api analyze-sample \
         thresholds thresholds.phase thresholds.club thresholds.overall \
         fmt lint clean logs-clean show-env
+
 
 # -----------------------------------------------------------------------------
 # [가장 자주 쓰는 타겟]
@@ -53,7 +67,6 @@ SIDE       ?= right
 # release:
 # - 실사용 파이프라인 (추천)
 # - rotate(버전 생성 + current 갱신 + 보관정책) + Git stage (+ 자동커밋 옵션)
-# - 일반적인 배포/반영 사이클일 때 이거 하나로 끝냄
 release: rotate
 	@echo "[release] stage thresholds_current.json + latest dated json"
 	@latest_file=$$(ls -1t $(OUTDIR)/*_thresholds.json 2>/dev/null | grep -v 'thresholds_current.json' | head -n1); \
@@ -70,6 +83,7 @@ release: rotate
 	  echo "[release] (dry) staged only. Set AUTO_COMMIT=1 to auto-commit."; \
 	fi
 
+
 # rotate:
 # - thresholds를 “운영용”으로 새로 뽑고, current 심링크 갱신
 # - KEEP 정책에 따라 오래된 파일은 data/thresholds/archive로 이동
@@ -83,12 +97,19 @@ rotate:
 	  --namefmt "$(NAMEFMT)"
 
 	@echo "[rotate] retention: keep latest $(KEEP) *_thresholds.json (excluding current), older -> data/thresholds/archive"
-	@mkdir -p data/thresholds/archive
-	@touch data/thresholds/archive/.keep
-	@ls -1t $(OUTDIR)/*_thresholds.json 2>/dev/null | \
-	  grep -v 'thresholds_current.json' | \
-	  awk 'NR>$(KEEP)' | \
-	  xargs -I{} sh -c 'mv "$$1" data/thresholds/archive/ || true' sh {}
+	@ARCHIVE_DIR="$$(pwd)/data/thresholds/archive"; \
+	OUT_ABS="$$(cd $(OUTDIR) && pwd)"; \
+	mkdir -p "$$ARCHIVE_DIR"; \
+	touch "$$ARCHIVE_DIR/.keep"; \
+	cd "$$OUT_ABS" && \
+	ls -1t *_thresholds.json 2>/dev/null | grep -v '^thresholds_current.json$$' | \
+	awk 'NR>$(KEEP)' | \
+	while read f; do \
+	  src="$$OUT_ABS/$$f"; \
+	  dst="$$ARCHIVE_DIR/"; \
+	  [ -f "$$src" ] && mv "$$src" "$$dst" && echo "→ moved: $$f -> $$dst" || true; \
+	done
+
 
 # dataset:
 # - data/logs/*.json → data/datasets/phase_dataset.csv 재생성
@@ -96,11 +117,13 @@ rotate:
 dataset:
 	$(PY) -m scripts.datasets.build_phase_dataset
 
+
 # api:
 # - 로컬 개발 서버 실행 (FastAPI + uvicorn)
 # - 프론트/클라이언트/테스트와 연동해서 결과 확인할 때 사용
 api:
 	$(PY) -m uvicorn $(APP) --host $(HOST) --port $(PORT) --reload
+
 
 # analyze-sample:
 # - 서버가 떠 있는 상태에서 샘플 mp4를 /analyze로 보내 결과를 JSON으로 확인
@@ -111,6 +134,7 @@ analyze-sample:
 	  -F "file=@$(SAMPLE_MP4)" \
 	  -F "side=$(SIDE)" \
 	  -F "club=$(CLUB)" | python -m json.tool
+
 
 # -----------------------------------------------------------------------------
 # [테스트/디버그용: TEST_* 산출물 생성 (커밋 X)]
@@ -137,11 +161,12 @@ thresholds.overall:
 	  --out $(OUTDIR)/TEST_thresholds_overall.json \
 	  --by overall
 
-# 3개 한 번에
+# 3개 한 번에 실행
 thresholds: thresholds.phase thresholds.club thresholds.overall
 
+
 # -----------------------------------------------------------------------------
-# [유지보수/정리/품질]
+# [유지보수/정리/품질 관리]
 # -----------------------------------------------------------------------------
 
 # fmt:
@@ -168,6 +193,7 @@ clean:
 logs-clean:
 	@rm -f data/logs/*.json || true
 
+
 # show-env:
 # - 현재 Make 변수들을 프린트 (디버그용)
 show-env:
@@ -182,12 +208,13 @@ show-env:
 	@echo "PORT=$(PORT)"
 	@echo "AUTO_COMMIT=$(AUTO_COMMIT)"
 
+
 # -----------------------------------------------------------------------------
 # [헬프]
 # -----------------------------------------------------------------------------
 help:
 	@echo "Usage / Most common targets (TOP → frequently used):"
-	@echo "  make release BY=phase KEEP=5 AUTO_COMMIT=1   # 실사용: 버전 생성+current 갱신+보관+Git 반영(옵션)"
+	@echo "  make release BY=phase KEEP=5 AUTO_COMMIT=1   # 실사용: 버전 생성+current 갱신 + 보관 + Git 커밋 반영(옵션)"
 	@echo "  make rotate BY=phase KEEP=5                  # 운영 버전만 생성/보관 (Git 반영 없음)"
 	@echo "  make dataset                                 # logs -> data/datasets/phase_dataset.csv"
 	@echo "  make api                                     # uvicorn 개발 서버"

@@ -132,7 +132,6 @@ class Settings:
             self.DOWNLOADS_DIR,
             self.NORMALIZED_DIR,
             self.DATASETS_DIR,
-            # self.THRESHOLDS_DIR,
             self.THRESHOLDS_ARCHIVE_DIR,
             self.REPORTS_DIR,
             self.VIDEOS_DIR,
