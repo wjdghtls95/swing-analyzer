@@ -11,7 +11,7 @@ from app.analyze.service import analyze_swing, analyze_from_url
 from app.analyze.schema import AnalyzeResponse, UrlRequest, NormMode, ClubType
 import os, shutil, uuid
 
-router = APIRouter(prefix="/analyze", tags=["Golf Swings"])
+router = APIRouter(prefix="/analyze", tags=["Analyze"])
 
 """
    왜 response_model을 없앴나?
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/analyze", tags=["Golf Swings"])
 """
 
 
-@router.post("", tags=["Swing"])  # ← response_model 제거
+@router.post(path="")  # ← response_model 제거
 async def analyze(
     file: UploadFile = File(...),
     side: str = Query("right", regex="^(right|left)$"),  # 좌/우타
@@ -42,7 +42,7 @@ async def analyze(
     )
 
 
-@router.post("/url", tags=["Swing"])
+@router.post(path="url")
 async def analyze_url(
     data: UrlRequest,
     side: str = Query("right", regex="^(right|left)$"),
