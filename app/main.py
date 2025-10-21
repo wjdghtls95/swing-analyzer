@@ -5,9 +5,11 @@ from app.config.settings import settings
 
 app = FastAPI(debug=settings.DEBUG_MODE)
 
+
 @app.get("/health", tags=["Health Check"])
 def health_check():
     return {"status": "ok"}
+
 
 app.include_router(analyze_router, prefix="/analyze")
 
@@ -21,9 +23,4 @@ app.openapi = lambda: get_openapi(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=settings.FASTAPI_PORT,
-        reload=True
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=settings.FASTAPI_PORT, reload=True)

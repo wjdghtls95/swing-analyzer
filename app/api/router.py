@@ -3,6 +3,7 @@
 - Swagger에서 바로 튜닝/비교 가능(side, min_vis, norm_mode).
 - 좌/우타/가시성 임계치에 따라 결과가 크게 달라질 수 있어 빠른 검증이 중요.
 """
+
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Query
@@ -18,13 +19,15 @@ router = APIRouter()
    - Pydantic 모델이 끼면 모델에 없는 키가 잘리거나 None으로 들어가 null이 생긴다.
    - dict 그대로 반환하면 service의 결과를 있는 그대로 전달할 수 있다.
 """
+
+
 @router.post("", tags=["Swing"])  # ← response_model 제거
 async def analyze(
     file: UploadFile = File(...),
-    side: str = Query("right", regex="^(right|left)$"),   # 좌/우타
-    min_vis: float = Query(0.5, ge=0.0, le=1.0),          # 가시성 임계치
-    norm_mode: NormMode = Query(NormMode.auto),            # 전처리 모드
-    club: Optional[ClubType] = Query(None)
+    side: str = Query("right", regex="^(right|left)$"),  # 좌/우타
+    min_vis: float = Query(0.5, ge=0.0, le=1.0),  # 가시성 임계치
+    norm_mode: NormMode = Query(NormMode.auto),  # 전처리 모드
+    club: Optional[ClubType] = Query(None),
 ):
     os.makedirs("uploads", exist_ok=True)
     file_id = uuid.uuid4().hex[:8]
@@ -34,7 +37,10 @@ async def analyze(
         shutil.copyfileobj(file.file, f)
 
     # service가 요약 응답(딕셔너리)만 돌려줌
-    return analyze_swing(file_path, side = side, min_vis = min_vis, norm_mode = norm_mode, club = club)
+    return analyze_swing(
+        file_path, side=side, min_vis=min_vis, norm_mode=norm_mode, club=club
+    )
+
 
 @router.post("/url", tags=["Swing"])
 async def analyze_url(
@@ -46,5 +52,5 @@ async def analyze_url(
         data.s3_url,
         side=side,
         min_vis=min_vis,
-        norm_mode=(data.norm_mode or NormMode.auto)
+        norm_mode=(data.norm_mode or NormMode.auto),
     )

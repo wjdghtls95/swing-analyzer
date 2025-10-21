@@ -3,16 +3,31 @@
 - 수학/기하(각도 계산) 로직을 분석/피드백(service)에서 분리하면 테스트/재사용이 쉬움.
 - 팔꿈치/무릎/척추 등 모든 관절 각도 계산에 공통 패턴을 적용.
 """
+
 from typing import List, Dict, Sequence, Tuple, Optional
 import math
 import numpy as np
 
 # MediaPipe 인덱스/트리플릿은 하드코딩하지 않고 constants에서 가져온다
 from app.analyze.constants import (
-    L_SHOULDER, R_SHOULDER, L_ELBOW, R_ELBOW, L_WRIST, R_WRIST,
-    L_HIP, R_HIP, L_KNEE, R_KNEE, L_ANKLE, R_ANKLE,
-    RIGHT_ARM, LEFT_ARM, RIGHT_LEG, LEFT_LEG,
+    L_SHOULDER,
+    R_SHOULDER,
+    L_ELBOW,
+    R_ELBOW,
+    L_WRIST,
+    R_WRIST,
+    L_HIP,
+    R_HIP,
+    L_KNEE,
+    R_KNEE,
+    L_ANKLE,
+    R_ANKLE,
+    RIGHT_ARM,
+    LEFT_ARM,
+    RIGHT_LEG,
+    LEFT_LEG,
 )
+
 
 def calculate_elbow_angle(
     landmarks: List[List[Dict[str, float]]],
@@ -42,6 +57,7 @@ def calculate_knee_angle(
     """
     triplet = RIGHT_LEG if side.lower() == "right" else LEFT_LEG
     return _sequence_mean_angle(landmarks, triplet, min_vis=min_vis)
+
 
 def angles_at_frame(
     frame_landmarks: Sequence[Dict[str, float]],
@@ -76,19 +92,24 @@ def angles_at_frame(
         rh = frame_landmarks[R_HIP]
         lh = frame_landmarks[L_HIP]
 
-
         if all(lm.get("visibility", 1.0) >= min_vis for lm in (rs, ls, rh, lh)):
-            mid_sh = ((_get(rs, "x") + _get(ls, "x")) / 2.0,
-                      (_get(rs, "y") + _get(ls, "y")) / 2.0)
+            mid_sh = (
+                (_get(rs, "x") + _get(ls, "x")) / 2.0,
+                (_get(rs, "y") + _get(ls, "y")) / 2.0,
+            )
 
-            mid_hip = ((_get(rh, "x") + _get(lh, "x")) / 2.0,
-                       (_get(rh, "y") + _get(lh, "y")) / 2.0)
+            mid_hip = (
+                (_get(rh, "x") + _get(lh, "x")) / 2.0,
+                (_get(rh, "y") + _get(lh, "y")) / 2.0,
+            )
 
-            vx, vy = (mid_hip[0] - mid_sh[0], mid_hip[1] - mid_sh[1])
+            vx = mid_hip[0] - mid_sh[0]
 
-            deg_h = math.degrees(math.atan2(vy, vx))          # 수평기준
+            vy = mid_hip[1] - mid_sh[1]
 
-            spine_tilt = abs(90.0 - abs(deg_h))               # 수직기준 절대 기울기
+            deg_h = math.degrees(math.atan2(vy, vx))  # 수평 기준
+
+            spine_tilt = abs(90.0 - abs(deg_h))  # 수직 기준 절대 기울기
             spine_tilt = float(np.round(spine_tilt, 1))
     except Exception:
         spine_tilt = float("nan")
@@ -97,7 +118,6 @@ def angles_at_frame(
     shoulder_turn = float("nan")
     hip_turn = float("nan")
     x_factor = float("nan")
-
     try:
         rs = frame_landmarks[R_SHOULDER]
         ls = frame_landmarks[L_SHOULDER]
@@ -118,19 +138,25 @@ def angles_at_frame(
         # 도메인 안정화를 위해 클램프(권장 범위: [-60, 60])
         x_factor = _clamp(x_factor, -60.0, 60.0)
     except Exception:
-        x_factor = float('nan')
+        x_factor = float("nan")
 
-    # 기존 반환 dict에 합치기
-    base = {
+    return {
         "elbow": float(np.round(elbow, 1)) if np.isfinite(elbow) else float("nan"),
         "knee": float(np.round(knee, 1)) if np.isfinite(knee) else float("nan"),
         "spine_tilt": spine_tilt,
-        "shoulder_turn": float(np.round(shoulder_turn, 1)) if math.isfinite(shoulder_turn) else float("nan"),
-        "hip_turn": float(np.round(hip_turn, 1)) if math.isfinite(hip_turn) else float("nan"),
-        "x_factor": float(np.round(x_factor, 1)) if math.isfinite(x_factor) else float("nan"),
+        "shoulder_turn": (
+            float(np.round(shoulder_turn, 1))
+            if math.isfinite(shoulder_turn)
+            else float("nan")
+        ),
+        "hip_turn": (
+            float(np.round(hip_turn, 1)) if math.isfinite(hip_turn) else float("nan")
+        ),
+        "x_factor": (
+            float(np.round(x_factor, 1)) if math.isfinite(x_factor) else float("nan")
+        ),
     }
 
-    return base
 
 # Internal utils
 # 내부 유틸 (모듈 외부로 공개하지 않음)
@@ -178,7 +204,9 @@ def _angle_from_triplet(
         if lm.get("visibility", 1.0) < min_vis:
             return float("nan")
 
-    A = _xyz(a); B = _xyz(b); C = _xyz(c)
+    A = _xyz(a)
+    B = _xyz(b)
+    C = _xyz(c)
     return _angle_deg(A, B, C)
 
 
@@ -194,8 +222,10 @@ def _angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     nbc = float(np.linalg.norm(bc))
     if nba == 0.0 or nbc == 0.0:
         return float("nan")
+
     cosv = float(np.dot(ba, bc) / (nba * nbc))
     cosv = max(-1.0, min(1.0, cosv))
+
     return float(np.degrees(np.arccos(cosv)))
 
 
@@ -204,11 +234,14 @@ def _xyz(lm: Dict[str, float]) -> np.ndarray:
     Mediapipe landmark dict → np.array([x, y, z]) 변환.
     - 좌표는 정규화(0~1). z는 상대 깊이(없으면 0).
     """
-    return np.array([
-        _get(lm, "x"),
-        _get(lm, "y"),
-        _get(lm, "z"),
-    ], dtype=float)
+    return np.array(
+        [
+            _get(lm, "x"),
+            _get(lm, "y"),
+            _get(lm, "z"),
+        ],
+        dtype=float,
+    )
 
 
 def _get(lm: Dict[str, float], k: str, default: float = 0.0) -> float:
@@ -221,6 +254,7 @@ def _get(lm: Dict[str, float], k: str, default: float = 0.0) -> float:
     except Exception:
         return default
 
+
 # 좌우 두 점으로 라인 각도(수평 = 0°, 시계방향 양수)
 def _line_angle(p_left, p_right):
     try:
@@ -231,23 +265,31 @@ def _line_angle(p_left, p_right):
     except Exception:
         return float("nan")
 
+
 # 각도 정규화 유틸
 def _wrap_deg(a: float) -> float:
     """임의의 각도를 [-180, 180]로 래핑"""
     if not math.isfinite(a):
         return float("nan")
+
     a = (a + 180.0) % 360.0 - 180.0
+
     if a == -180.0:
         a = 180.0
+
     return a
+
 
 def _delta_deg(a: float, b: float) -> float:
     """두 각도의 최소 부호 있는 차이( a - b ), 결과 [-180, 180]"""
     if not (math.isfinite(a) and math.isfinite(b)):
         return float("nan")
+
     d = (a - b + 180.0) % 360.0 - 180.0
+
     if d == -180.0:
         d = 180.0
+
     return d
 
 

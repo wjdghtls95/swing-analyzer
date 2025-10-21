@@ -8,6 +8,7 @@ from enum import Enum
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 
+
 class NormMode(str, Enum):
     """
     전처리 선택:
@@ -15,18 +16,22 @@ class NormMode(str, Enum):
       - pro: 하드웨어 인코딩 / 스마트 카피(빠름)
       - auto: pro 시도 실패 시 basic fallback
     """
+
     basic = "basic"
-    pro   = "pro"
-    auto  = "auto"
+    pro = "pro"
+    auto = "auto"
+
 
 class ClubType(str, Enum):
     """
     골프 클럽 선택
     """
-    driver = 'driver'
-    iron = 'iron'
-    wedge = 'wedge'
-    putter = 'putter'
+
+    driver = "driver"
+    iron = "iron"
+    wedge = "wedge"
+    putter = "putter"
+
 
 class AnalyzeResponse(BaseModel):
     """
@@ -34,6 +39,7 @@ class AnalyzeResponse(BaseModel):
     - 필수: swingId, elbowAvgAngle, feedback, landmarkCount
     - 선택: 전처리 메타/품질지표/구간/확장지표/진단
     """
+
     swingId: str
     elbowAvgAngle: float
     feedback: str
@@ -50,10 +56,12 @@ class AnalyzeResponse(BaseModel):
     phases: Optional[Dict[str, Optional[int]]] = None
     metrics: Optional[Dict[str, float]] = None
 
+
 class UrlRequest(BaseModel):
     """
     URL 입력 분석용 요청 모델
     - norm_mode는 전처리 전략 실험/튜닝에 사용
     """
+
     s3_url: str
     norm_mode: Optional[NormMode] = NormMode.auto

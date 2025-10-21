@@ -13,6 +13,7 @@ from app.ml import PhaseLSTM, TorchPhaseAdapter
 
 logger = logging.getLogger(__name__)
 
+
 # Public API
 def detect_phases(
     landmarks: List[List[Dict[str, Any]]],
@@ -42,7 +43,9 @@ def detect_phases(
                 logger.warning(f"[phase] ML inference failed, fallback to rule: {e}")
 
         if method == "ml":
-            logger.warning("[phase] ML requested but model not available; falling back to rule.")
+            logger.warning(
+                "[phase] ML requested but model not available; falling back to rule."
+            )
 
         # fallback
         return _detect_phases_equal_split(total)
@@ -64,6 +67,7 @@ def _detect_phases_equal_split(total_frames: int) -> Dict[str, int]:
 # ---- ML 로딩/추론 ------------------------------------------------------------
 _PHASE_MODEL = None  # lazy cache
 
+
 def _load_phase_model():
     """
     Phase 모델 지연 로딩.
@@ -77,7 +81,9 @@ def _load_phase_model():
         return _PHASE_MODEL
 
     # 모델 경로 우선순위: settings -> env
-    path = getattr(settings, "PHASE_MODEL_PATH", None) or os.environ.get("PHASE_MODEL_PATH")
+    path = getattr(settings, "PHASE_MODEL_PATH", None) or os.environ.get(
+        "PHASE_MODEL_PATH"
+    )
     if not path:
         logger.warning("[phase] no PHASE_MODEL_PATH provided.")
         return None
@@ -91,16 +97,31 @@ def _load_phase_model():
         return None
 
     # 모델 하이퍼파라미터 읽기 (환경변수나 settings에서) & 학습과 동일해야 함
-    input_dim = int(os.environ.get("PHASE_MODEL_INPUT_DIM", getattr(settings, "PHASE_MODEL_INPUT_DIM", 3)))
-    hidden_dim = int(os.environ.get("PHASE_MODEL_HIDDEN_DIM", getattr(settings, "PHASE_MODEL_HIDDEN_DIM", 32)))
+    input_dim = int(
+        os.environ.get(
+            "PHASE_MODEL_INPUT_DIM", getattr(settings, "PHASE_MODEL_INPUT_DIM", 3)
+        )
+    )
+    hidden_dim = int(
+        os.environ.get(
+            "PHASE_MODEL_HIDDEN_DIM", getattr(settings, "PHASE_MODEL_HIDDEN_DIM", 32)
+        )
+    )
     num_classes = int(
-        os.environ.get("PHASE_MODEL_NUM_CLASSES", getattr(settings, "PHASE_MODEL_NUM_CLASSES", 8)))
+        os.environ.get(
+            "PHASE_MODEL_NUM_CLASSES", getattr(settings, "PHASE_MODEL_NUM_CLASSES", 8)
+        )
+    )
 
     try:
         # 1) 체크포인트 로드
         state = torch.load(path, map_location="cpu")
         # lightning 형식이면 'state_dict' 안에 들어있을 수 있음
-        if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        if (
+            isinstance(state, dict)
+            and "state_dict" in state
+            and isinstance(state["state_dict"], dict)
+        ):
             state = state["state_dict"]
 
         # 2) lstm.weight_ih_l0 찾기 (순차 확인 + suffix 검색)
@@ -117,7 +138,9 @@ def _load_phase_model():
                     break
         if w_ih is None:
             sample = list(state.keys())[:10]
-            raise ValueError(f"checkpoint missing 'lstm.weight_ih_l0'. sample keys: {sample}")
+            raise ValueError(
+                f"checkpoint missing 'lstm.weight_ih_l0'. sample keys: {sample}"
+            )
 
         inferred_input_dim = int(w_ih.shape[1])  # F
         inferred_hidden_dim = int(w_ih.shape[0] // 4)  # H
@@ -131,16 +154,26 @@ def _load_phase_model():
 
         if head_w is None:
             for k in state.keys():
-                if k.endswith("head.weight") or k.endswith("fc.weight") or k.endswith("classifier.weight"):
+                if (
+                    k.endswith("head.weight")
+                    or k.endswith("fc.weight")
+                    or k.endswith("classifier.weight")
+                ):
                     head_w = state[k]
                     break
         if head_w is None:
             sample = list(state.keys())[:10]
-            raise ValueError(f"checkpoint missing classifier head weight. sample keys: {sample}")
+            raise ValueError(
+                f"checkpoint missing classifier head weight. sample keys: {sample}"
+            )
 
         inferred_num_classes = int(head_w.shape[0])  # C
 
-        model = PhaseLSTM(input_dim = inferred_input_dim, hidden_dim = inferred_hidden_dim, num_classes = inferred_num_classes)
+        model = PhaseLSTM(
+            input_dim=inferred_input_dim,
+            hidden_dim=inferred_hidden_dim,
+            num_classes=inferred_num_classes,
+        )
         model.load_state_dict(state, strict=False)
         model.eval()
 
@@ -159,6 +192,7 @@ def _load_phase_model():
     except Exception as e:
         logger.warning(f"[phase] torch model load failed: {e}")
         return None
+
 
 def _predict_phase_indices_ml(
     landmarks: List[List[Dict[str, Any]]],
@@ -212,7 +246,9 @@ def _featurize_sequence(landmarks: List[List[Dict[str, Any]]]) -> np.ndarray:
 
     arr = np.zeros((T, 3), dtype=float)
     for t in range(T):
-        vals = angles_at_frame(landmarks[t], side="right")  # side는 서비스에서 일관되게 전달됨
+        vals = angles_at_frame(
+            landmarks[t], side="right"
+        )  # side는 서비스에서 일관되게 전달됨
         arr[t, 0] = vals.get("elbow") or np.nan
         arr[t, 1] = vals.get("knee") or np.nan
         arr[t, 2] = vals.get("spine_tilt") or np.nan
@@ -274,7 +310,9 @@ def _indices_from_sequence_labels(preds: np.ndarray) -> Dict[str, Optional[int]]
     return out
 
 
-def _indices_from_multiclass_proba(proba: np.ndarray, classes: List[str]) -> Dict[str, Optional[int]]:
+def _indices_from_multiclass_proba(
+    proba: np.ndarray, classes: List[str]
+) -> Dict[str, Optional[int]]:
     """
     (T,C) proba와 클래스 라벨 리스트가 주어졌을 때,
     각 P2..P9 클래스의 argmax 프레임을 반환.

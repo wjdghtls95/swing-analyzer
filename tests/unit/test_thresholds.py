@@ -2,6 +2,7 @@
 import importlib
 import types
 
+
 def test_diagnosis_from_thresholds(monkeypatch):
     """
     metrics → thresholds bins 매칭으로 elbow/knee 진단이 생성되는지 확인.
@@ -14,15 +15,15 @@ def test_diagnosis_from_thresholds(monkeypatch):
         "elbow_avg": {
             "bins": [
                 {"max": 120, "msg": "팔꿈치 굴곡이 큰 편입니다."},
-                {"min": 120, "max": 999, "msg": "팔꿈치 각도가 적정 범위입니다."}
+                {"min": 120, "max": 999, "msg": "팔꿈치 각도가 적정 범위입니다."},
             ]
         },
         "knee_avg": {
             "bins": [
                 {"max": 140, "msg": "무릎 굴곡이 큰 편입니다."},
-                {"min": 140, "max": 999, "msg": "무릎 각도가 적정 범위입니다."}
+                {"min": 140, "max": 999, "msg": "무릎 각도가 적정 범위입니다."},
             ]
-        }
+        },
     }
     monkeypatch.setattr(svc, "_THRESH", fake_thresh, raising=True)
 

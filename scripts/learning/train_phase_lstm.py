@@ -2,6 +2,7 @@
 학습 스크립트 (데이터 로드 + 학습 루프 + 모델 저장)
 phase_X.pt / phase_y.pt 로 간단 학습 → models/phase_model.pkl 저장
 """
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,6 +14,7 @@ from app.ml import PhaseLSTM
 OUT_DIR = Path("artifacts/models")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
 def main():
     # 1) 데이터 로드
     df = pd.read_csv("artifacts/datasets/phase_dataset.csv")
@@ -20,9 +22,11 @@ def main():
 
     # features (elbow, knee, spine_tilt)
     X = df[["elbow", "knee", "spine_tilt"]].values.reshape(-1, 1, 3)  # (N, T=1, F=3)
-    y = df["phase"].astype("category").cat.codes.values              # 문자열 phase → 숫자 인덱스
+    y = df["phase"].astype("category").cat.codes.values  # 문자열 phase → 숫자 인덱스
 
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
     X_train = torch.tensor(X_train, dtype=torch.float32)
     y_train = torch.tensor(y_train, dtype=torch.long)
@@ -52,12 +56,15 @@ def main():
             val_pred = val_out.argmax(dim=1)
             acc = (val_pred == y_val).float().mean().item()
 
-        print(f"[Epoch {epoch}] train_loss={loss.item():.4f} val_loss={val_loss.item():.4f} val_acc={acc:.3f}")
+        print(
+            f"[Epoch {epoch}] train_loss={loss.item():.4f} val_loss={val_loss.item():.4f} val_acc={acc:.3f}"
+        )
 
     # 4) 모델 저장
     ckpt = OUT_DIR / "phase_lstm.pt"
     torch.save(model.state_dict(), ckpt)
     print(f"[train_phase_lstm] model saved: {ckpt}")
+
 
 if __name__ == "__main__":
     main()

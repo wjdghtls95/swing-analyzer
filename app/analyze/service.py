@@ -1,13 +1,16 @@
-# app/analyze/service.py
 from __future__ import annotations
 
 import os, shutil, uuid, time, json, requests, logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 
 from fastapi import HTTPException
 
 from app.analyze.extractor import PoseExtractor
-from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle, angles_at_frame
+from app.analyze.angle import (
+    calculate_elbow_angle,
+    calculate_knee_angle,
+    angles_at_frame,
+)
 from app.analyze.phase import detect_phases
 from app.analyze.schema import NormMode, ClubType
 from app.config.settings import settings
@@ -19,11 +22,14 @@ from app.utils.resource_finder import rf
 # ---------- 로거 ----------
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
 # ---------- 내부 로깅 디렉토리 ----------
 _LOG_DIR = settings.LOG_DIR
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # ---------- 메인 파이프라인 ----------
 def analyze_swing(
@@ -31,7 +37,7 @@ def analyze_swing(
     side: str = "right",
     min_vis: float = 0.5,
     norm_mode: NormMode = NormMode.auto,
-    club: Optional[ClubType] = None
+    club: Optional[ClubType] = None,
 ) -> dict:
     """
     1) 전처리 → 2) 포즈 추출 → 3) 평균 메트릭 계산 → 4) 페이즈별 메트릭 → 5) 페이즈별 진단 → 6) 로깅/응답
@@ -53,10 +59,10 @@ def analyze_swing(
 
     # 3) (선택) 평균 메트릭
     elbow_angle = calculate_elbow_angle(landmarks, side=side, min_vis=min_vis)
-    knee_angle  = calculate_knee_angle(landmarks, side=side, min_vis=min_vis)
+    knee_angle = calculate_knee_angle(landmarks, side=side, min_vis=min_vis)
     metrics = {
         "elbow_avg": float(elbow_angle) if elbow_angle == elbow_angle else float("nan"),
-        "knee_avg":  float(knee_angle)  if knee_angle  == knee_angle  else float("nan"),
+        "knee_avg": float(knee_angle) if knee_angle == knee_angle else float("nan"),
     }
 
     # 4) 페이즈별 지표
@@ -78,7 +84,9 @@ def analyze_swing(
     thresholds = _load_thresholds()
 
     # settings.THRESH_METRICS가 있으면 사용, 없으면 관측된 키로 도출
-    metrics_for_label: List[str] = getattr(settings, "THRESH_METRICS", None) or _infer_metrics_from_phase(phase_metrics)
+    metrics_for_label: List[str] = getattr(
+        settings, "THRESH_METRICS", None
+    ) or _infer_metrics_from_phase(phase_metrics)
 
     club_key = club.value if hasattr(club, "value") else (club or "")
     diagnosis_by_phase = build_phase_diagnosis(
@@ -88,7 +96,7 @@ def analyze_swing(
         metrics=metrics_for_label,
     )
 
-    # 6) 검출률/응답
+    # 6) 결과 조립
     detected = len(landmarks)
     total = int(total_seen or detected)
     rate = round(detected / total, 3) if total else None
@@ -106,7 +114,7 @@ def analyze_swing(
         detected=detected,
         total=total,
         rate=rate,
-        metrics=metrics,            # FE가 안 쓰면 results_builder에서 빼도 OK
+        metrics=metrics,  # FE가 안 쓰면 results_builder에서 빼도 OK
         phases=phases,
         phase_metrics=phase_metrics,
         diagnosis_by_phase=diagnosis_by_phase,  # 페이즈별만 (AVG 없음)
@@ -115,8 +123,9 @@ def analyze_swing(
     # 내부 로깅
     try:
         log_path = settings.LOG_DIR / f"{swing_id}_{uuid.uuid4().hex[:6]}.json"
-        with log_path.open("w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii = False, indent = 2)
+        log_path.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except Exception as e:
         logger.debug(f"[LOG] write failed: {e}")
 
@@ -127,16 +136,18 @@ def analyze_from_url(
     s3_url: str,
     side: str = "right",
     min_vis: float = 0.5,
-    norm_mode: NormMode = NormMode.auto
+    norm_mode: NormMode = NormMode.auto,
 ) -> dict:
-    dst_dir = settings.DOWNLOADS_DIR
-    dst_dir.mkdir(parents = True, exist_ok = True)
+    downloads = settings.DOWNLOADS_DIR
+    downloads.mkdir(parents=True, exist_ok=True)
+
     filename = f"downloads/{uuid.uuid4().hex[:8]}.mp4"
 
     with requests.get(s3_url, stream=True) as r:
         r.raise_for_status()
         with open(filename, "wb") as f:
             shutil.copyfileobj(r.raw, f)
+
     return analyze_swing(str(filename), side=side, min_vis=min_vis, norm_mode=norm_mode)
 
 
@@ -161,8 +172,8 @@ def _load_thresholds() -> dict:
         logger.warning(f"[THRESH] thresholds file not found: {path}")
         return {}
     try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = json.loads(path.read_text(encoding="utf-8"))
+
         logger.info(f"[THRESH] loaded: {path}")
         return data if isinstance(data, dict) else {}
     except Exception as e:
@@ -193,14 +204,20 @@ def _do_preprocess(src_path: str, mode: NormMode):
             normalize_video(src_path, dst_path, fps=fps, height=height, mirror=mirror)
             used_mode = "basic"
         elif mode == NormMode.pro:
-            normalize_video_pro(src_path, dst_path, fps=fps, height=height, mirror=mirror)
+            normalize_video_pro(
+                src_path, dst_path, fps=fps, height=height, mirror=mirror
+            )
             used_mode = "pro"
         else:
             try:
-                normalize_video_pro(src_path, dst_path, fps=fps, height=height, mirror=mirror)
+                normalize_video_pro(
+                    src_path, dst_path, fps=fps, height=height, mirror=mirror
+                )
                 used_mode = "pro"
             except Exception:
-                normalize_video(src_path, dst_path, fps=fps, height=height, mirror=mirror)
+                normalize_video(
+                    src_path, dst_path, fps=fps, height=height, mirror=mirror
+                )
                 used_mode = "basic"
 
     except FileNotFoundError as e:
@@ -208,8 +225,9 @@ def _do_preprocess(src_path: str, mode: NormMode):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"preprocess failed: {e}") from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"unexpected preprocess error: {e}") from e
-
+        raise HTTPException(
+            status_code=500, detail=f"unexpected preprocess error: {e}"
+        ) from e
     finally:
         ms = int((time.perf_counter() - t0) * 1000)
 
@@ -221,7 +239,7 @@ def _dedupe_phases(phases: Dict[str, int]) -> Dict[str, int]:
     서로 다른 페이즈가 같은 프레임 인덱스를 가리키는 경우를 정리.
     정책: 앞 순서(P2→P9) 우선 채택, 중복 인덱스가 뒤에서 나오면 버림.
     """
-    order = ["P2","P3","P4","P5","P6","P7","P8","P9"]
+    order = ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"]
     seen = set()
     out: Dict[str, int] = {}
     for p in order:

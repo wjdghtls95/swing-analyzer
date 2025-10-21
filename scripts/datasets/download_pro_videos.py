@@ -1,9 +1,11 @@
 import argparse, json, subprocess
 from pathlib import Path
 
+
 def run(cmd):
     print(">", " ".join(cmd))
     subprocess.run(cmd, check=True)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -25,10 +27,12 @@ def main():
                 cmd = [
                     args.yt_dlp,
                     "--no-check-certificate",
-                    "-o", str(out_dir / "%(title)s-%(id)s.%(ext)s"),
-                    url
+                    "-o",
+                    str(out_dir / "%(title)s-%(id)s.%(ext)s"),
+                    url,
                 ]
                 run(cmd)
+
 
 if __name__ == "__main__":
     main()

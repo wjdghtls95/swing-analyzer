@@ -11,6 +11,7 @@ REQUIRED_DIRS = [
     PROJECT_ROOT / "artifacts" / "models",
 ]
 
+
 def ensure_dirs(paths=None):
     targets = paths or REQUIRED_DIRS
     for p in targets:

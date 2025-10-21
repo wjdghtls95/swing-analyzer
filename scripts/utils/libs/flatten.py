@@ -1,13 +1,17 @@
 from typing import Dict, Any, Optional
 from .jsonio import safe_get
 
-def flatten_phase_metrics(pm: Optional[Dict[str, Dict[str, float]]]) -> Dict[str, float]:
+
+def flatten_phase_metrics(
+    pm: Optional[Dict[str, Dict[str, float]]]
+) -> Dict[str, float]:
     flat = {}
     for ph, vals in (pm or {}).items():
         if isinstance(vals, dict):
             for k, v in vals.items():
                 flat[f"phase.{ph}.{k}"] = v
     return flat
+
 
 def flatten_diag_by_phase(diag: Optional[Dict[str, Dict[str, str]]]) -> Dict[str, str]:
     out = {}
@@ -16,6 +20,7 @@ def flatten_diag_by_phase(diag: Optional[Dict[str, Dict[str, str]]]) -> Dict[str
             for k, v in vals.items():
                 out[f"diag.{ph}.{k}"] = v
     return out
+
 
 def flatten_core_blocks(d: Dict[str, Any]) -> Dict[str, Any]:
     base = {

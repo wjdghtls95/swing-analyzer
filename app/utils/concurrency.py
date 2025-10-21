@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 NORMALIZE_CONCURRENCY_LIMIT = 2
 _normalize_semaphore = asyncio.Semaphore(NORMALIZE_CONCURRENCY_LIMIT)
 
+
 @asynccontextmanager
 async def normalize_slot():
     """

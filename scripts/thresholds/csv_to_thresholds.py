@@ -1,7 +1,6 @@
 # scripts/thresholds/csv_to_thresholds.py
 from __future__ import annotations
-import argparse
-import json
+import argparse, json
 from pathlib import Path
 from typing import Optional
 
@@ -16,8 +15,14 @@ from app.utils.resource_finder import rf
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser()
     # --csv 는 선택. 비워두면 rf.dataset_path() 사용
-    ap.add_argument("--csv", required=False, help="phase_dataset.csv 경로 (생략 시 자동 탐색)")
-    ap.add_argument("--out", required=True, help="출력 JSON 경로 (예: app/config/2025-10-20_thresholds.json)")
+    ap.add_argument(
+        "--csv", required=False, help="phase_dataset.csv 경로 (생략 시 자동 탐색)"
+    )
+    ap.add_argument(
+        "--out",
+        required=True,
+        help="출력 JSON 경로 (예: app/config/2025-10-20_thresholds.json)",
+    )
     ap.add_argument("--by", default="phase", choices=["phase", "club", "overall"])
     ap.add_argument("--metric", default=",".join(settings.THRESH_METRICS))
     ap.add_argument("--phases", default=",".join(settings.THRESH_PHASES))
@@ -49,30 +54,28 @@ def _guard_and_clip(series: pd.Series, metric: str) -> pd.Series:
     return s
 
 
-def _build_bins(values: pd.Series, num_bins: int = 5) -> dict:
+def _build_bins(values: pd.Series) -> dict:
     """
     단일 메트릭에 대한 구간(bin) 요약.
     - 표본 너무 적거나 값이 비정상이면 빈 dict.
     """
     values = _to_numeric_series(values)
-    if len(values) < 5:
+    if len(values) < settings.THRESH_MIN_N:
         return {}
 
-    # 분위 분할 (0..1)
-    quantiles = np.linspace(0, 1, num_bins + 1)
-    cuts = np.quantile(values, quantiles)
+    # 분위 엣지들 (예: num_bins = 5 → 6개 엣지)
+    edges = np.linspace(0, 1, settings.THRESH_MIN_N + 1)
 
     # 퇴화 가드: 범위가 사실상 0
-    if float(np.max(cuts) - np.min(cuts)) < 1e-6:
+    if float(np.max(edges) - np.min(edges)) < settings.THRESH_DEGENERATE_EPS:
         return {}
 
-    mean = float(np.round(values.mean(), 2))
-    std = float(np.round(values.std(ddof=0), 2))
     return {
-        "bins": [float(np.round(x, 2)) for x in cuts],
-        "mean": mean,
-        "std": std,
-        "n": int(len(values)),
+        # 엣지(경계)들은 길이 = bins+1
+        "bins": [float(np.round(x, 2)) for x in edges],  # 구간 경계값(edge) 리스트
+        "mean": float(np.round(values.mean(), 2)),  # 표본 평균
+        "std": float(np.round(values.std(ddof=0), 2)),  # 표본 표준편차
+        "n": int(len(values)),  # 사용된 표본 수
     }
 
 
@@ -80,17 +83,16 @@ def _build_bins(values: pd.Series, num_bins: int = 5) -> dict:
 def main(argv=None):
     args = _parse_args(argv)
 
-    csv_path = _resolve_csv_path(args.csv)
+    csv_path = (
+        Path(args.csv) if args.csv else (settings.DATASETS_DIR / "phase_dataset.csv")
+    )
+
     if not csv_path.exists():
-        raise FileNotFoundError(
-            f"입력 CSV 파일이 존재하지 않습니다: {csv_path}\n"
-            f"힌트) --csv를 지정하거나, .env의 DATASET_PATH 또는 "
-            f"기본 {rf.dataset_path()} 위치에 파일을 두세요."
-        )
+        raise FileNotFoundError(f"입력 CSV 파일이 존재하지 않습니다: {csv_path}")
 
     df = pd.read_csv(csv_path)
     if df.empty:
-        raise ValueError(f"❌ 입력 CSV가 비어 있습니다: {csv_path}")
+        raise ValueError(f"입력 CSV가 비어 있습니다: {csv_path}")
 
     metrics = [m.strip() for m in args.metric.split(",") if m.strip()]
     phases = [p.strip() for p in args.phases.split(",") if p.strip()]
@@ -110,7 +112,7 @@ def main(argv=None):
                 section[m] = _build_bins(_guard_and_clip(group[m], m))
             out_obj[str(club)] = section
 
-    else:  # by == "phase"  (필요하면 club×phase로 바꿀 수 있음)
+    else:  # by == "phase"  필요하면 club x phase로 바꿀 수 있음
         for ph, group in df.groupby("phase", dropna=True):
             if ph not in phases:
                 continue
@@ -121,8 +123,9 @@ def main(argv=None):
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(out_obj, f, ensure_ascii=False, indent=2)
+    out_path.write_text(
+        json.dumps(out_obj, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     print(f"[OK] thresholds -> {out_path}")
 

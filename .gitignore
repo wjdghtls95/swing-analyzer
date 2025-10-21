@@ -39,9 +39,9 @@ coverage.xml
 # 🚀 빌드 & 로그 관련
 build/
 dist/
-logs/
-downloads/
-normalized/
+data/logs/
+data/downloads/
+data/normalized/
 *.spec
 
 # 📂 Jupyter Notebook 캐시
@@ -57,8 +57,6 @@ data/
 uploads
 
 # data & outputs
-logs/
-artifacts/
 *.parquet
 *.csv
 
@@ -66,6 +64,15 @@ artifacts/
 .notebooks/
 .ipynb_checkpoints/
 
+# ML thresholds
+data/thresholds/
+!data/thresholds/archive/.keep
+
+# throw-away / 보조 산출물은 추적 안 함
+app/config/TEST_*.json
+app/config/*_phase.json
+app/config/*_club.json
+app/config/*_overall.json
 
 # environment
 .env

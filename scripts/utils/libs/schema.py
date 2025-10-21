@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, TypedDict, Literal
 
 PhaseMethod = Literal["auto", "ml", "rule"]
 
+
 class FlatRow(TypedDict, total=False):
     file: str
     swingId: Optional[str]
@@ -10,5 +11,6 @@ class FlatRow(TypedDict, total=False):
     timestamp: Optional[int]
     detectionRate: Optional[float]
     # ... 필요 필드들 확장
+
 
 PHASE_KEYS = [f"P{i}" for i in range(2, 10)]

@@ -4,6 +4,7 @@ from app.ml.features import build_features
 
 DATA = Path("artifacts/aggregated.csv")
 
+
 def main():
     df = pd.read_csv(DATA)
     X = build_features(df)
@@ -14,6 +15,7 @@ def main():
 
     print("[train] X shape:", X.shape, "y positive rate:", y.mean())
     # 여기에 모델 학습 코드 추가 (e.g., sklearn)
+
 
 if __name__ == "__main__":
     main()

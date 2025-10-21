@@ -15,6 +15,7 @@ from typing import List, Dict, Tuple
 
 mp_pose = mp.solutions.pose
 
+
 class PoseExtractor:
     def __init__(self, step: int = 3):
         """
@@ -27,10 +28,12 @@ class PoseExtractor:
             model_complexity=1,
             enable_segmentation=False,
             min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_tracking_confidence=0.5,
         )
 
-    def extract_from_video(self, video_path: str) -> Tuple[np.ndarray, List[List[Dict[str, float]]], int]:
+    def extract_from_video(
+        self, video_path: str
+    ) -> Tuple[np.ndarray, List[List[Dict[str, float]]], int]:
         """
         Returns:
           - landmarks_np: numpy array 버전(후처리 없으면 사용 안 해도 됨)
@@ -61,12 +64,7 @@ class PoseExtractor:
             # 검출 성공한 프레임만 수집
             if results.pose_landmarks:
                 keypoints = [
-                    {
-                        'x': lm.x,
-                        'y': lm.y,
-                        'z': lm.z,
-                        'visibility': lm.visibility
-                    }
+                    {"x": lm.x, "y": lm.y, "z": lm.z, "visibility": lm.visibility}
                     for lm in results.pose_landmarks.landmark
                 ]
                 raw_data.append(keypoints)

@@ -1,6 +1,7 @@
 import pandas as pd
 from typing import Dict, List
 
+
 def summarize_counts(df: pd.DataFrame, columns: List[str]) -> Dict[str, Dict]:
     out = {}
     for col in columns:

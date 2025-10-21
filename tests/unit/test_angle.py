@@ -2,9 +2,11 @@
 import numpy as np
 from app.analyze.angle import calculate_elbow_angle, calculate_knee_angle
 
+
 def _empty_frame():
     """MediaPipe 33개 랜드마크 기본 프레임(가시성 1.0)"""
-    return [{"x":0.0,"y":0.0,"z":0.0,"visibility":1.0} for _ in range(33)]
+    return [{"x": 0.0, "y": 0.0, "z": 0.0, "visibility": 1.0} for _ in range(33)]
+
 
 def test_elbow_angle_visibility_filter():
     """
@@ -21,15 +23,16 @@ def test_elbow_angle_visibility_filter():
     f2 = _empty_frame()
     # 간단히 수평-수직 직각(90도)이 나오도록 배치
     # shoulder(12)=(0,0,0), elbow(14)=(1,0,0), wrist(16)=(1,1,0) → 90도
-    f2[12].update({"x":0.0,"y":0.0,"z":0.0})
-    f2[14].update({"x":1.0,"y":0.0,"z":0.0})
-    f2[16].update({"x":1.0,"y":1.0,"z":0.0})
+    f2[12].update({"x": 0.0, "y": 0.0, "z": 0.0})
+    f2[14].update({"x": 1.0, "y": 0.0, "z": 0.0})
+    f2[16].update({"x": 1.0, "y": 1.0, "z": 0.0})
     frames.append(f2)
 
     angle = calculate_elbow_angle(frames, side="right", min_vis=0.5)
     # 한 프레임만 유효하므로 90±(수치 오차)
     assert not np.isnan(angle)
     assert 85.0 <= angle <= 95.0
+
 
 def test_knee_angle_basic():
     """
@@ -39,9 +42,9 @@ def test_knee_angle_basic():
     frames = []
     f = _empty_frame()
     # 직선에 가깝게 배치 → 각도 ~180도 근처
-    f[24].update({"x":0.0,"y":0.0,"z":0.0})
-    f[26].update({"x":1.0,"y":0.0,"z":0.0})
-    f[28].update({"x":2.0,"y":0.0,"z":0.0})
+    f[24].update({"x": 0.0, "y": 0.0, "z": 0.0})
+    f[26].update({"x": 1.0, "y": 0.0, "z": 0.0})
+    f[28].update({"x": 2.0, "y": 0.0, "z": 0.0})
     frames.append(f)
 
     angle = calculate_knee_angle(frames, side="right", min_vis=0.5)

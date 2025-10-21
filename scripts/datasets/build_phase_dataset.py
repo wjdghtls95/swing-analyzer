@@ -7,10 +7,10 @@ import pandas as pd
 from app.config.settings import settings
 from app.utils.resource_finder import rf
 
+
 def main():
     # 1) 입력 로그 경로: settings.LOG_DIR/*.json
-    log_glob = str(settings.LOG_DIR / "*.json")
-    files = glob.glob(log_glob)
+    files = glob.glob(str(settings.LOG_DIR / "*.json"))
     rows = []
 
     # 2) 로그 → 행 변환
@@ -26,24 +26,34 @@ def main():
 
         # 각 phase별로 한 줄씩 적재
         for ph, vals in phase_metrics.items():
-            rows.append({
-                "swingId": swing_id,
-                "phase": ph,  # 예: P2..P9
-                "club": str(club) if club is not None else None,
-                "elbow": vals.get("elbow"),
-                "knee": vals.get("knee"),
-                "spine_tilt": vals.get("spine_tilt"),
-                "shoulder_turn": vals.get("shoulder_turn"),
-                "hip_turn": vals.get("hip_turn"),
-                "x_factor": vals.get("x_factor"),
-            })
+            rows.append(
+                {
+                    "swingId": swing_id,
+                    "phase": ph,  # 예: P2..P9
+                    "club": str(club) if club is not None else None,
+                    "elbow": vals.get("elbow"),
+                    "knee": vals.get("knee"),
+                    "spine_tilt": vals.get("spine_tilt"),
+                    "shoulder_turn": vals.get("shoulder_turn"),
+                    "hip_turn": vals.get("hip_turn"),
+                    "x_factor": vals.get("x_factor"),
+                }
+            )
 
     df = pd.DataFrame(rows)
 
     # 3) 최소 컬럼 보장 및 정리
-    needed_cols = ["swingId", "phase", "club",
-                   "elbow", "knee", "spine_tilt",
-                   "shoulder_turn", "hip_turn", "x_factor"]
+    needed_cols = [
+        "swingId",
+        "phase",
+        "club",
+        "elbow",
+        "knee",
+        "spine_tilt",
+        "shoulder_turn",
+        "hip_turn",
+        "x_factor",
+    ]
     for c in needed_cols:
         if c not in df.columns:
             df[c] = pd.NA
@@ -64,6 +74,7 @@ def main():
     out_csv = out_dir / "phase_dataset.csv"
     df.to_csv(out_csv, index=False)
     print(f"[build_phase_dataset] saved: {out_csv} rows={len(df)}")
+
 
 if __name__ == "__main__":
     main()

@@ -13,6 +13,7 @@ from app.analyze.constants import (
     DEFAULT_VIDEO_MIRROR,
 )
 
+
 # ─────────────────────────────────────────────────────────
 # Project root 탐색
 #   - .git / pyproject.toml / requirements.txt 중 하나가 보이는 최상단을 루트로 간주
@@ -21,7 +22,10 @@ from app.analyze.constants import (
 def find_project_root() -> Path:
     cur = Path(__file__).resolve()
     for parent in cur.parents:
-        if any((parent / m).exists() for m in (".git", "pyproject.toml", "requirements.txt")):
+        if any(
+            (parent / m).exists()
+            for m in (".git", "pyproject.toml", "requirements.txt")
+        ):
             return parent
     env_root = os.getenv("BASE_DIR")
     if env_root:
@@ -31,6 +35,7 @@ def find_project_root() -> Path:
         "루트에 .git/pyproject.toml/requirements.txt 중 하나를 두거나, "
         "환경변수 BASE_DIR을 지정하세요."
     )
+
 
 ROOT: Path = find_project_root()
 
@@ -61,15 +66,14 @@ class Settings:
     DATA_DIR: Path = env_path("DATA_DIR", ROOT / "data")
 
     # ── Standard data subdirs (모두 DATA_DIR 기준) ────────
-    VIDEOS_DIR: Path = env_path("VIDEOS_DIR", DATA_DIR / "videos")
-    NORMALIZED_DIR: Path = env_path("NORMALIZED_DIR", DATA_DIR / "normalized")
-    DOWNLOADS_DIR: Path = env_path("DOWNLOADS_DIR", DATA_DIR / "downloads")
-    LOG_DIR: Path = env_path("LOG_DIR", DATA_DIR / "logs")
-    OUTPUT_DIR: Path = env_path("OUTPUT_DIR", DATA_DIR / "output")
-    DATASETS_DIR: Path = env_path("DATASETS_DIR", DATA_DIR / "datasets")
-    THRESHOLDS_DIR: Path = env_path("THRESHOLDS_DIR", DATA_DIR / "thresholds")
-    THRESHOLDS_ARCHIVE_DIR: Path = THRESHOLDS_DIR / "archive"
-    REPORTS_DIR: Path = env_path("REPORTS_DIR", DATA_DIR / "reports")
+    VIDEOS_DIR: Path = DATA_DIR / "videos"
+    NORMALIZED_DIR: Path = DATA_DIR / "normalized"
+    DOWNLOADS_DIR: Path = DATA_DIR / "downloads"
+    LOG_DIR: Path = DATA_DIR / "logs"
+    OUTPUT_DIR: Path = DATA_DIR / "output"
+    DATASETS_DIR: Path = DATA_DIR / "datasets"
+    THRESHOLDS_ARCHIVE_DIR: Path = DATA_DIR / "thresholds" / "archive"
+    REPORTS_DIR: Path = DATA_DIR / "reports"
 
     # 업로드(외부 입력) 기본 폴더
     UPLOADS_DIR: Path = env_path("UPLOADS_DIR", ROOT / "uploads")
@@ -96,6 +100,13 @@ class Settings:
         ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"],
     )
 
+    # 분위 구간 개수 (예: 5 → 6개 엣지로 나뉨)
+    THRESH_NUM_BINS: int = int(os.getenv("THRESH_NUM_BINS", 5))
+    # 최소 표본 수 (너무 적으면 빈 결과 반환)
+    THRESH_MIN_N: int = int(os.getenv("THRESH_MIN_N", 5))
+    # 퇴화 가드 임계값: 구간이 사실상 한 점이면 skip
+    THRESH_DEGENERATE_EPS: float = float(os.getenv("THRESH_DEGENERATE_EPS", "1e-6"))
+
     # ── Metrics Range & Sample Guards ─────────────────────
     METRIC_RANGES = {
         "elbow": (0, 180),
@@ -121,7 +132,7 @@ class Settings:
             self.DOWNLOADS_DIR,
             self.NORMALIZED_DIR,
             self.DATASETS_DIR,
-            self.THRESHOLDS_DIR,
+            # self.THRESHOLDS_DIR,
             self.THRESHOLDS_ARCHIVE_DIR,
             self.REPORTS_DIR,
             self.VIDEOS_DIR,

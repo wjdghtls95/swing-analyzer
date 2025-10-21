@@ -10,32 +10,23 @@ from app.config.settings import settings  # Settings 싱글톤 사용
 
 class ResourceFinder:
     """중앙 경로 헬퍼 thresholds 관리"""
+
     def __init__(self):
         self.root: Path = settings.ROOT
         # settings에 상대경로로 설정되어 있으므로 아래처럼 정확히 결합
         self.data = self.root / settings.DATA_DIR
         self.config = self.root / settings.CONFIG_DIR
         self.logs = self.root / settings.LOG_DIR
+        self.datasets = settings.DATASETS_DIR
+        self.thr_archive = settings.THRESHOLDS_ARCHIVE_DIR
 
         # 로그/아티팩트 폴더는 기본 생성
-        self.logs.mkdir(parents=True, exist_ok=True)
-
-    # ----- 하위 경로 -----
-    def under_root(self, *parts: Union[str, Path]) -> Path:
-        return (self.root.joinpath(*parts)).resolve()
-
-    def under_data(self, *parts: Union[str, Path]) -> Path:
-        return (self.data.joinpath(*parts)).resolve()
-
-    def under_config(self, *parts: Union[str, Path]) -> Path:
-        return (self.config.joinpath(*parts)).resolve()
-
-    def under_logs(self, *parts: Union[str, Path]) -> Path:
-        return (self.logs.joinpath(*parts)).resolve()
+        for d in [self.logs, self.datasets, self.thr_archive]:
+            Path(d).mkdir(parents=True, exist_ok=True)
 
     # ----- glob & 최신 파일 -----
     def glob(self, pattern: str, base: Optional[Path] = None) -> List[Path]:
-        base = (base or self.root)
+        base = base or self.root
         return [Path(p) for p in glob.glob(str(base / pattern))]
 
     def latest_by_mtime(self, paths: Iterable[Union[str, Path]]) -> Optional[Path]:
@@ -59,7 +50,7 @@ class ResourceFinder:
     # ----- thresholds / dataset 헬퍼 (ENV 최우선) -----
     def thresholds_path(self) -> Path:
         # 1) ENV 최우선
-        env_path = os.getenv("THRESHOLDS_FILE")
+        env_path = os.getenv("THRESHOLDS_FILE") or settings.THRESHOLDS_FILE
         if env_path:
             p = Path(env_path)
             if not p.is_absolute():
@@ -68,7 +59,7 @@ class ResourceFinder:
                 return p
 
         # 2) current → 최신본 탐색
-        current = self.under_config("thresholds_current.json")
+        current = self.config / "thresholds_current.json"
         if current.exists():
             try:
                 return current.resolve(strict=True)
@@ -83,7 +74,7 @@ class ResourceFinder:
         if env_path:
             p = Path(env_path)
             return p if p.is_absolute() else (self.root / env_path)
-        return self.under_root("dataset/phase_dataset.csv")
+        return self.datasets / "phase_dataset.csv"
 
 
 # 전역 인스턴스

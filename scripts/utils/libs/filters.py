@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
+
 def row_passes_filters(
     row: Dict[str, Any],
     *,
