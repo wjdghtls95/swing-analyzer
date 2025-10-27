@@ -1,9 +1,5 @@
 from __future__ import annotations
 from typing import Dict, Any, Optional, List
-import json
-
-from app.llm.client import get_llm_client
-
 
 # 간단한 프롬프트 빌더(phase_metrics + diagnosis를 요약)
 def _build_prompt(
