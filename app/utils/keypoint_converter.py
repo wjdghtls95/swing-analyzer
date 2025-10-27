@@ -1,4 +1,3 @@
-# keypoint_converter.py
 import numpy as np
 import json
 from typing import Union

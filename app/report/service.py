@@ -4,6 +4,7 @@ import json
 
 from app.llm.client import get_llm_client
 
+
 # 간단한 프롬프트 빌더(phase_metrics + diagnosis를 요약)
 def _build_prompt(
     phase_metrics: Dict[str, Dict[str, float]],
@@ -14,8 +15,10 @@ def _build_prompt(
 ) -> str:
     # 주요 포인트만 압축
     lines: List[str] = []
-    if club: lines.append(f"- Club: {club}")
-    if side: lines.append(f"- Side: {side}")
+    if club:
+        lines.append(f"- Club: {club}")
+    if side:
+        lines.append(f"- Side: {side}")
     lines.append("- Summary: per-phase metrics & diagnosis")
 
     # 페이즈별 간단 요약
@@ -23,9 +26,13 @@ def _build_prompt(
         m = phase_metrics.get(ph) or {}
         d = diagnosis_by_phase.get(ph) or {}
         # 핵심 몇 개만
-        elbow = m.get("elbow"); knee = m.get("knee"); xt = m.get("x_factor")
+        elbow = m.get("elbow")
+        knee = m.get("knee")
+        xt = m.get("x_factor")
         diag_labels = ", ".join([f"{k}:{v}" for k, v in d.items()]) if d else "-"
-        lines.append(f"  • {ph}: elbow={elbow}, knee={knee}, x_factor={xt} | diag=({diag_labels})")
+        lines.append(
+            f"  • {ph}: elbow={elbow}, knee={knee}, x_factor={xt} | diag=({diag_labels})"
+        )
 
     # thresholds 간단 표시(있으면)
     if thresholds_info:
@@ -38,6 +45,7 @@ def _build_prompt(
 
     return "\n".join(lines)
 
+
 def build_text_report(
     *,
     phase_metrics: Dict[str, Dict[str, float]],
@@ -45,8 +53,8 @@ def build_text_report(
     thresholds: Optional[Dict[str, Any]] = None,
     club: Optional[str] = None,
     side: Optional[str] = None,
-    tone: str = "coach",          # coach | neutral 등
-    language: str = "ko",         # ko | en
+    tone: str = "coach",  # coach | neutral 등
+    language: str = "ko",  # ko | en
     model: Optional[str] = None,
 ) -> str:
     """

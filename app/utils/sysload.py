@@ -1,4 +1,3 @@
-# app/util/sysload.py
 import os
 import shutil
 import time

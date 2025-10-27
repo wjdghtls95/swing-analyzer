@@ -99,13 +99,27 @@ class Settings:
         "THRESH_PHASES",
         ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"],
     )
+    THRESH_REQUIRED_KEYS = env_list(  # service에서 사용하던 REQUIRED_KEYS 이동
+        "THRESH_REQUIRED_KEYS",
+        ["bins", "mean", "std", "n"],
+    )
+    THRESH_QLOW: float = float(
+        os.getenv("THRESH_QLOW", "0.1")
+    )  # bins→range 하한 퍼센타일
+    THRESH_QHIGH: float = float(
+        os.getenv("THRESH_QHIGH", "0.9")
+    )  # bins→range 상한 퍼센타일
 
-    # 분위 구간 개수 (예: 5 → 6개 엣지로 나뉨)
-    THRESH_NUM_BINS: int = int(os.getenv("THRESH_NUM_BINS", 5))
-    # 최소 표본 수 (너무 적으면 빈 결과 반환)
-    THRESH_MIN_N: int = int(os.getenv("THRESH_MIN_N", 5))
-    # 퇴화 가드 임계값: 구간이 사실상 한 점이면 skip
-    THRESH_DEGENERATE_EPS: float = float(os.getenv("THRESH_DEGENERATE_EPS", "1e-6"))
+    # 분위, 샘플 제한 (생성 파이프라인에서 사용)
+    THRESH_NUM_BINS: int = int(
+        os.getenv("THRESH_NUM_BINS", 5)
+    )  # 분위 구간 개수 (예: 5 → 6개 엣지로 나뉨)
+    THRESH_MIN_N: int = int(
+        os.getenv("THRESH_MIN_N", 5)
+    )  # 최소 표본 수 (너무 적으면 빈 결과 반환)
+    THRESH_DEGENERATE_EPS: float = float(
+        os.getenv("THRESH_DEGENERATE_EPS", "1e-6")
+    )  # 퇴화 가드 임계값: 구간이 사실상 한 점이면 skip
 
     # ── Metrics Range & Sample Guards ─────────────────────
     METRIC_RANGES = {
@@ -119,12 +133,28 @@ class Settings:
     MIN_SAMPLE = 30
     MAX_SAMPLE = 100
 
+    # LLM 설정
+    LLM_PROVIDERS = env_list("LLM_PROVIDERS", ["openai", "mcp-openai", "noop"])
+    LLM_DEFAULT_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
+    LLM_DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "gpt-5")
+    LLM_FALLBACK_MODELS = env_list("LLM_FALLBACK_MODELS", ["gpt-4o-mini"])  # 체인 순서
+    LLM_TEMPERATURE_DEFAULT: float = float(os.getenv("LLM_TEMPERATURE_DEFAULT", "0.4"))
+    LLM_MAX_TOKENS_DEFAULT: int = int(os.getenv("LLM_MAX_TOKENS_DEFAULT", "700"))
+
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+
+    # 경량 게이트웨이 연결 (헤더 인증)
+    LLM_GATEWAY_ENDPOINT: str = os.getenv(
+        "LLM_GATEWAY_ENDPOINT", "http://localhost:3030/chat"
+    )
+    LLM_GATEWAY_KEY: str = os.getenv("LLM_GATEWAY_KEY", "dev-key")
+
     # ── 명시적 파일/데이터셋 경로(선택) ───────────────────
     THRESHOLDS_FILE: Optional[str] = os.getenv("THRESHOLDS_FILE")
     DATASET_PATH: Optional[str] = os.getenv("DATASET_PATH")
 
     def __init__(self) -> None:
-        # 자주 쓰는 디렉토리 존재 보장
+        # 자주 쓰는 디렉토리 보장
         dirs = [
             self.UPLOADS_DIR,
             self.LOG_DIR,

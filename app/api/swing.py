@@ -1,15 +1,14 @@
-"""
-왜 파라미터를 열었나?
-- Swagger에서 바로 튜닝/비교 가능(side, min_vis, norm_mode).
-- 좌/우타/가시성 임계치에 따라 결과가 크게 달라질 수 있어 빠른 검증이 중요.
-"""
-
+from __future__ import annotations
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Query
-from app.analyze.service import analyze_swing, analyze_from_url
-from app.analyze.schema import AnalyzeResponse, UrlRequest, NormMode, ClubType
+from fastapi import APIRouter, UploadFile, File, Query, Body
+from app.analyze.service import analyze_swing
+from app.analyze.schema import NormMode, ClubType
+from app.utils.enums.enums import SideEnum
+
 import os, shutil, uuid
+
+from app.utils.types.types import LLMConfig
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
 
@@ -24,10 +23,11 @@ router = APIRouter(prefix="/analyze", tags=["Analyze"])
 @router.post(path="")  # ← response_model 제거
 async def analyze(
     file: UploadFile = File(...),
-    side: str = Query("right", regex="^(right|left)$"),  # 좌/우타
+    side: SideEnum = Query(SideEnum.right),  # Swagger 드롭 다운 (좌/우타)
     min_vis: float = Query(0.5, ge=0.0, le=1.0),  # 가시성 임계치
     norm_mode: NormMode = Query(NormMode.auto),  # 전처리 모드
     club: Optional[ClubType] = Query(None),
+    llm: LLMConfig = Body(...),  # Body(JSON)로 LLM 설정 일괄 수신
 ):
     os.makedirs("uploads", exist_ok=True)
     file_id = uuid.uuid4().hex[:8]
@@ -38,22 +38,39 @@ async def analyze(
 
     # service가 요약 응답(딕셔너리)만 돌려줌
     return analyze_swing(
-        file_path, side=side, min_vis=min_vis, norm_mode=norm_mode, club=club
-    )
-
-
-@router.post(path="url")
-async def analyze_url(
-    data: UrlRequest,
-    side: str = Query("right", regex="^(right|left)$"),
-    min_vis: float = Query(0.5, ge=0.0, le=1.0),
-):
-    return analyze_from_url(
-        data.s3_url,
-        side=side,
+        file_path,
+        side=side.value,
         min_vis=min_vis,
-        norm_mode=(data.norm_mode or NormMode.auto),
+        norm_mode=norm_mode,
+        club=club,
+        llm_provider=llm.provider,
+        llm_model=llm.model,
+        llm_api_key=llm.api_key,
+        llm_extra={"vendor": llm.vendor, **llm.extra},
     )
 
+
+# ================================
+# s3 도입시 사용할 api
+# ================================
+# @router.post(path="url")
+# async def analyze_url(
+#     data: UrlRequest,
+#     side: str = Query("right", pattern="^(right|left)$"),
+#     min_vis: float = Query(0.5, ge=0.0, le=1.0),
+#
+#     llm_provider: LLMProviderEnum = Query(settings.LLM_DEFAULT_PROVIDER),
+#     llm_model: Optional[str] = Query(None),
+#     llm_api_key: Optional[str] = Query(None),
+# ):
+#     return analyze_from_url(
+#         data.s3_url,
+#         side=side,
+#         min_vis=min_vis,
+#         norm_mode=(data.norm_mode or NormMode.auto),
+#         llm_provider=llm_provider.value,
+#         llm_model=llm_model,
+#         llm_api_key=llm_api_key,
+#     )
 
 ROUTER = [router]

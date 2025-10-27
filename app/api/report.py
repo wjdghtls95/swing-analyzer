@@ -10,9 +10,13 @@ from pathlib import Path
 
 router = APIRouter()
 
+
 @router.post("/report", tags=["Report"])
 def build_report_api(
-    payload: Dict[str, Any] = Body(..., description="analyze_swing 결과 중 일부(phase_metrics, diagnosis_by_phase 등)"),
+    payload: Dict[str, Any] = Body(
+        ...,
+        description="analyze_swing 결과 중 일부(phase_metrics, diagnosis_by_phase 등)",
+    ),
     language: str = Query("ko", regex="^(ko|en)$"),
     tone: str = Query("coach"),
     model: Optional[str] = Query(None),
