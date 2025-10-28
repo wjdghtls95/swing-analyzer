@@ -346,6 +346,7 @@ def _load_thresholds(by: Optional[str] = None) -> dict:
     """
     path = rf.thresholds_path()
     data = {}
+
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception as e:
@@ -400,21 +401,7 @@ def _range_from_bins(
 
 def _adapt_thresholds_bins_to_ranges(thr: dict, qlow: float, qhigh: float) -> dict:
     """중첩 구조(phase/club/overall) 내 metric block들을 {min,max}로 변환"""
-
-    def _walk(src: dict) -> dict:
-        local = {}
-        for k, v in src.items():
-            if isinstance(v, dict) and REQUIRED_KEYS.issubset(v.keys()):
-                rng = _range_from_bins(v, qlow, qhigh)
-                if rng:
-                    local[k] = {"min": rng[0], "max": rng[1]}
-            elif isinstance(v, dict):
-                nested = _walk(v)
-                if nested:
-                    local[k] = nested
-        return local
-
-    return _walk(thr)
+    return adapt_bins_to_ranges(thr, qlow=qlow, qhigh=qhigh, required_keys=REQUIRED_KEYS)
 
 
 # 입력 영상 표준화

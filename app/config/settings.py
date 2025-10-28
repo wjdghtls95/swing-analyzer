@@ -139,7 +139,7 @@ class Settings:
     LLM_DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "gpt-5")
     LLM_FALLBACK_MODELS = env_list("LLM_FALLBACK_MODELS", ["gpt-4o-mini"])  # 체인 순서
     LLM_TEMPERATURE_DEFAULT: float = float(os.getenv("LLM_TEMPERATURE_DEFAULT", "0.4"))
-    LLM_MAX_TOKENS_DEFAULT: int = int(os.getenv("LLM_MAX_TOKENS_DEFAULT", "700"))
+    LLM_MAX_TOKENS_DEFAULT: int = int(os.getenv("LLM_MAX_TOKENS_DEFAULT", "100"))
 
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 

@@ -1,7 +1,6 @@
 """
 OpenAI SDK를 필요할 때만 동적으로 import하고, 그 성공/실패 결과를 전역 캐시에 저장해 다음 호출부터는 즉시 재사용하는 지연 로딩(lazy import) + 캐시 헬퍼
 """
-
 from __future__ import annotations
 import importlib, threading, logging
 from typing import Any, Optional, List, Dict
@@ -15,7 +14,7 @@ _cache: Dict[str, Any] = {
     "available": None,  # import 가능 여부
 }
 
-
+"""openai.OpenAI 동적 import (lazy) + 결과 캐시"""
 def _import_openai_cls() -> Optional[type]:
     if _cache["available"] is True:
         return _cache["OpenAI"]
@@ -36,10 +35,8 @@ def _import_openai_cls() -> Optional[type]:
             logger.warning(f"[LLM] OpenAI SDK import failed: {e}")
             return None
 
-
+"""SDK 의존 분리용 어댑터: .chat() 만 노출"""
 class _OpenAIChatAdapter:
-    """SDK 차단/의존성 분리를 위한 어댑터: .chat() 만 노출"""
-
     def __init__(self, api_key: str):
         OpenAI = _import_openai_cls()
         if not OpenAI:
