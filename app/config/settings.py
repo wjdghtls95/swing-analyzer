@@ -149,6 +149,12 @@ class Settings:
     )
     LLM_GATEWAY_KEY: str = os.getenv("LLM_GATEWAY_KEY", "dev-key")
 
+    # NestJS 게이트웨이의 /chat 엔드포인트 주소
+    NEST_GATEWAY_CHAT_URL: str = os.environ.get("NEST_GATEWAY_CHAT_URL", "http://localhost:3000/chat")
+
+    # NestJS 게이트웨이 인증을 위한 내부 API 키
+    NEST_INTERNAL_API_KEY: str = os.environ.get("NEST_INTERNAL_API_KEY", "your-secret-internal-api-key")
+
     # ── 명시적 파일/데이터셋 경로(선택) ───────────────────
     THRESHOLDS_FILE: Optional[str] = os.getenv("THRESHOLDS_FILE")
     DATASET_PATH: Optional[str] = os.getenv("DATASET_PATH")

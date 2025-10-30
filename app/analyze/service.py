@@ -121,41 +121,122 @@ def analyze_swing(
         metrics=metrics_for_label,
     )
 
-    # 6) LLM 요약 (gateway / compat / sdk 모두 Delegate에 위임)
-    #   - 프롬프트도 하드코딩 금지하고 싶다면 settings에 상수로 빼서 관리 가능
-    system_prompt = (
-        "You are a concise golf swing coach. "
-        "Explain issues briefly and list up to 3 actionable steps. "
-        "Keep each action under 15 words."
-    )
-    user_prompt = (
-        "Phase-based diagnosis JSON (already evaluated by thresholds):\n"
-        f"{json.dumps(diagnosis_by_phase, ensure_ascii=False)}\n\n"
-        f"Side: {side}, Club: {club_key or 'unknown'}\n"
-        "Return:\n- summary: 1-2 sentences\n- actions: bullet points (<=3)"
-    )
-
-    messages: List[Message] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    delegate_provider, delegate_extra = _map_to_delegate(llm_provider, llm_extra)
+    try:
+        logger.info(f"[DEBUG] phase_metrics: {json.dumps(phase_metrics, indent=2)}")
+    except Exception:
+        logger.info(f"[DEBUG] phase_metrics (non-serializable): {phase_metrics}")
 
     try:
-        llm_text = _llm.generate(
-            messages,
-            provider=llm_provider,
-            model=(llm_model or settings.LLM_DEFAULT_MODEL),
-            temperature=settings.LLM_TEMPERATURE_DEFAULT,
-            max_tokens=settings.LLM_MAX_TOKENS_DEFAULT,
-            timeout=20.0,
-            api_key_override=llm_api_key,
-            extra=delegate_extra,
+        logger.info(f"[DEBUG] diagnosis_by_phase: {json.dumps(diagnosis_by_phase, indent=2)}")
+    except Exception:
+        logger.info(f"[DEBUG] diagnosis_by_phase (non-serializable): {diagnosis_by_phase}")
+
+    # 6) LLM 요약 (gateway / sdk 모두 Delegate에 위임)
+    #   - 프롬프트도 하드코딩 금지하고 싶다면 settings에 상수로 빼서 관리 가능
+    delegate_provider, delegate_extra = _map_to_delegate(llm_provider, llm_extra)
+    llm_text = "[LLM unavailable]"
+    provider_used = llm_provider
+
+    # --- A. NestJS 게이트웨이("gateway")를 사용하라고 요청받은 경우 ---
+    if llm_provider == "gateway":
+        logger.info(f"[LLM] Calling NestJS Gateway (/chat) at: {settings.NEST_GATEWAY_CHAT_URL}")
+        provider_used = "gateway (nest)"
+
+        # 1. [번역] NestJS의 'AnalysisDataDto' 형식으로 "번역"
+        # (이 매핑은 NestJS DTO와 Python 데이터 구조에 맞게 정확히 설정해야 합니다.)
+        try:
+            analysis_data_for_nest = {
+                # 예시: P4(탑)의 'body_angle' 값을 'backswingAngle' 키에 매핑
+                "backswingAngle": phase_metrics.get("P4", {}).get("shoulder_turn", 0),
+                # 예시: P6(다운)의 'body_angle' 값을 'downswingAngle' 키에 매핑
+                "downswingAngle": phase_metrics.get("P6", {}).get("shoulder_turn", 0),
+                # 예시: P7(임팩트)의 'body_angle' 값을 'impactAngle' 키에 매핑
+                "impactAngle": phase_metrics.get("P7", {}).get("spine_tilt", 0),
+
+                # [★] 'errors'가 필요한 이유:
+                # P7(임팩트)에서 진단된 문제점('label') 목록을 LLM에게 전달
+                "errors": [diag["label"] for diag in diagnosis_by_phase.get("P7", []) if "label" in diag]
+            }
+        except Exception as e:
+            logger.error(f"[NEST_GW] Failed to translate analysis data: {e}")
+            # 번역 실패 시, DTO 유효성 검사를 통과할 기본값 전송
+            analysis_data_for_nest = {
+                "backswingAngle": 0, "downswingAngle": 0, "impactAngle": 0, "errors": ["translation_failed"]
+            }
+
+        # 2. [번역] NestJS로 보낼 프롬프트 (데이터를 제외한 순수 질문)
+        prompt_for_nest = (
+            f"Side: {side}, Club: {club_key or 'unknown'}\n"
+            "내 스윙 분석 데이터를 바탕으로 1-2문장 요약과 3개 이하의 실천 방안을 한국어로 알려줘. (각 15단어 이내)"
         )
-    except Exception as e:
-        logger.warning(f"[LLM] failed: {e}")
-        llm_text = "[LLM unavailable]"
+
+        # 3. [번역] NestJS /chat DTO 페이로드(전송할 JSON) 구성
+        nest_chat_dto = {
+            "provider": delegate_extra.get("vendor", "openai"),  # 게이트웨이가 사용할 실제 LLM
+            "model": (llm_model or settings.LLM_DEFAULT_MODEL),
+            "prompt": prompt_for_nest,
+            "analysisData": analysis_data_for_nest,  # 👈 1번에서 "번역한" 데이터
+            "language": "ko"
+        }
+
+        # 4. [전송] NestJS 게이트웨이 호출
+        try:
+            response = requests.post(
+                settings.NEST_GATEWAY_CHAT_URL,  # 👈 settings.py 에 설정된 주소
+                json=nest_chat_dto,  # 👈 3번에서 만든 JSON
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Internal-Api-Key": settings.NEST_INTERNAL_API_KEY  # 👈 settings.py 에 설정된 키
+                },
+                timeout=20.0
+            )
+
+            if response.status_code == 200:
+                llm_text = response.json().get("feedback", "[LLM response format error]")
+            else:
+                logger.warning(f"[NEST_GW] Call failed: {response.status_code} - {response.text}")
+                llm_text = f"[LLM gateway error: {response.status_code}]"
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[NEST_GW] Connection failed: {e}")
+            llm_text = "[LLM connection error]"
+
+    # --- B. 기존 방식 ("openai", "compat" 등)을 사용하는 경우 ---
+    else:
+        logger.info(f"[LLM] Calling DelegateLLMClient with provider: {llm_provider}")
+        provider_used = llm_provider
+
+        # (기존의 messages, user_prompt, _llm.generate() 호출 코드... 동일)
+        system_prompt = (
+            "You are a concise golf swing coach. "
+            "Explain issues briefly and list up to 3 actionable steps. "
+            "Keep each action under 15 words."
+        )
+
+        user_prompt = (
+                "Phase-based diagnosis JSON (already evaluated by thresholds):\n"
+                f"{json.dumps(diagnosis_by_phase, ensure_ascii=False)}\n\n"
+                f"Side: {side}, Club: {club_key or 'unknown'}\n"
+                "Return:\n- summary: 1-2 sentences\n- actions: bullet points (<=3)"
+            )
+
+        messages: List[Message] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        try:
+            llm_text = _llm.generate(
+                messages,
+                provider=llm_provider,
+                model=(llm_model or settings.LLM_DEFAULT_MODEL),
+                temperature=settings.LLM_TEMPERATURE_DEFAULT,
+                max_tokens=settings.LLM_MAX_TOKENS_DEFAULT,
+                timeout=90.0,
+                api_key_override=llm_api_key,
+                extra=delegate_extra,
+            )
+        except Exception as e:
+            logger.warning(f"[LLM] failed: {e}")
+            llm_text = "[LLM unavailable]"
 
     # 7) 응답 조립
     detected = len(landmarks)
@@ -192,7 +273,7 @@ def analyze_swing(
 
     result["feedback"] = {
         "summary": llm_text,
-        "provider": llm_provider,
+        "provider": provider_used,
         "model": (llm_model or settings.LLM_DEFAULT_MODEL),
     }
 

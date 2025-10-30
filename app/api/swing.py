@@ -44,10 +44,9 @@ class AnalyzeRequest(BaseModel):
                 "norm_mode": "auto",
                 "club": "driver",
                 "llm": {
-                    "provider": "openai",
+                    "provider": "gateway",
                     "vendor": "openai",
                     "model": "gpt-4o-mini",
-                    "api_key": "sk-proj-..."
                 }
             }
         }
