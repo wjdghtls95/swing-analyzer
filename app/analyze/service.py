@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import HTTPException
 import os, shutil, uuid, time, json, requests, logging, glob
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from pathlib import Path
 
 from app.analyze.extractor import PoseExtractor
@@ -46,22 +46,22 @@ REQUIRED_KEYS = set(settings.THRESH_REQUIRED_KEYS)
 
 # ---------- 메인 파이프라인 ----------
 def analyze_swing(
-    file_path: str,
-    side: str = "right",
-    min_vis: float = 0.5,
-    norm_mode: NormMode = NormMode.auto,
-    club: Optional[ClubType] = None,
-    # LLM 옵션: 기본값/체인/토큰 등은 settings 에서만 관리
-    llm_provider: str = settings.LLM_DEFAULT_PROVIDER,
-    llm_model: Optional[str] = None,
-    llm_api_key: Optional[str] = None,
-    llm_extra: Optional[Dict[str, any]] = None,
+        file_path: str,
+        side: str = "right",
+        min_vis: float = 0.5,
+        norm_mode: NormMode = NormMode.auto,
+        club: Optional[ClubType] = None,
+        llm_config: Optional[dict] = None
 ) -> dict:
     """
     파이프 라인
     1) 전처리 → 2) 포즈 추출 → 3) 평균 메트릭 계산 → 4) 페이즈별 지표 → 5) thresholds 로딩/적용 → 6) 룰 기반 진단 -> 7) LLM 요약/행동 가이드 -> 8) 응답
     """
-    llm_extra = llm_extra or {}
+    llm_config = llm_config or {}
+    llm_provider = llm_config.get('provider')
+
+    # 이 llm_extra가 (플로우 6번) 게이트웨이로 전달될 "옵션"입니다.
+    llm_extra = {k: v for k, v in llm_config.items() if k != "provider"}
 
     # 1) 전처리 (영상 표준화)
     try:
@@ -133,110 +133,29 @@ def analyze_swing(
 
     # 6) LLM 요약 (gateway / sdk 모두 Delegate에 위임)
     #   - 프롬프트도 하드코딩 금지하고 싶다면 settings에 상수로 빼서 관리 가능
-    delegate_provider, delegate_extra = _map_to_delegate(llm_provider, llm_extra)
-    llm_text = "[LLM unavailable]"
-    provider_used = llm_provider
+    feedback = None
 
-    # --- A. NestJS 게이트웨이("gateway")를 사용하라고 요청받은 경우 ---
-    if llm_provider == "gateway":
-        logger.info(f"[LLM] Calling NestJS Gateway (/chat) at: {settings.NEST_GATEWAY_CHAT_URL}")
-        provider_used = "gateway (nest)"
-
-        # 1. [번역] NestJS의 'AnalysisDataDto' 형식으로 "번역"
-        # (이 매핑은 NestJS DTO와 Python 데이터 구조에 맞게 정확히 설정해야 합니다.)
+    if llm_provider == 'gateway':
         try:
-            analysis_data_for_nest = {
-                # 예시: P4(탑)의 'body_angle' 값을 'backswingAngle' 키에 매핑
-                "backswingAngle": phase_metrics.get("P4", {}).get("shoulder_turn", 0),
-                # 예시: P6(다운)의 'body_angle' 값을 'downswingAngle' 키에 매핑
-                "downswingAngle": phase_metrics.get("P6", {}).get("shoulder_turn", 0),
-                # 예시: P7(임팩트)의 'body_angle' 값을 'impactAngle' 키에 매핑
-                "impactAngle": phase_metrics.get("P7", {}).get("spine_tilt", 0),
+            analysis_data = _map_to_delegate_dto(
+                phases=phases,
+                phase_metrics=phase_metrics,
+                diagnosis_by_phase=diagnosis_by_phase,
+                swing_id=os.path.basename(file_path).split("_")[0],
+                side=side,
+                club=club_key
+            )
 
-                # [★] 'errors'가 필요한 이유:
-                # P7(임팩트)에서 진단된 문제점('label') 목록을 LLM에게 전달
-                "errors": [diag["label"] for diag in diagnosis_by_phase.get("P7", []) if "label" in diag]
-            }
+            feedback = _llm.chat_summary_gateway(
+                analysis_data=analysis_data,
+                **llm_extra
+            )
+
+            logger.info(f"[LLM] gateway feedback: {feedback}")
+
         except Exception as e:
-            logger.error(f"[NEST_GW] Failed to translate analysis data: {e}")
-            # 번역 실패 시, DTO 유효성 검사를 통과할 기본값 전송
-            analysis_data_for_nest = {
-                "backswingAngle": 0, "downswingAngle": 0, "impactAngle": 0, "errors": ["translation_failed"]
-            }
-
-        # 2. [번역] NestJS로 보낼 프롬프트 (데이터를 제외한 순수 질문)
-        prompt_for_nest = (
-            f"Side: {side}, Club: {club_key or 'unknown'}\n"
-            "내 스윙 분석 데이터를 바탕으로 1-2문장 요약과 3개 이하의 실천 방안을 한국어로 알려줘. (각 15단어 이내)"
-        )
-
-        # 3. [번역] NestJS /chat DTO 페이로드(전송할 JSON) 구성
-        nest_chat_dto = {
-            "provider": delegate_extra.get("vendor", "openai"),  # 게이트웨이가 사용할 실제 LLM
-            "model": (llm_model or settings.LLM_DEFAULT_MODEL),
-            "prompt": prompt_for_nest,
-            "analysisData": analysis_data_for_nest,  # 👈 1번에서 "번역한" 데이터
-            "language": "ko"
-        }
-
-        # 4. [전송] NestJS 게이트웨이 호출
-        try:
-            response = requests.post(
-                settings.NEST_GATEWAY_CHAT_URL,  # 👈 settings.py 에 설정된 주소
-                json=nest_chat_dto,  # 👈 3번에서 만든 JSON
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Internal-Api-Key": settings.NEST_INTERNAL_API_KEY  # 👈 settings.py 에 설정된 키
-                },
-                timeout=20.0
-            )
-
-            if response.status_code == 200:
-                llm_text = response.json().get("feedback", "[LLM response format error]")
-            else:
-                logger.warning(f"[NEST_GW] Call failed: {response.status_code} - {response.text}")
-                llm_text = f"[LLM gateway error: {response.status_code}]"
-        except requests.exceptions.RequestException as e:
-            logger.error(f"[NEST_GW] Connection failed: {e}")
-            llm_text = "[LLM connection error]"
-
-    # --- B. 기존 방식 ("openai", "compat" 등)을 사용하는 경우 ---
-    else:
-        logger.info(f"[LLM] Calling DelegateLLMClient with provider: {llm_provider}")
-        provider_used = llm_provider
-
-        # (기존의 messages, user_prompt, _llm.generate() 호출 코드... 동일)
-        system_prompt = (
-            "You are a concise golf swing coach. "
-            "Explain issues briefly and list up to 3 actionable steps. "
-            "Keep each action under 15 words."
-        )
-
-        user_prompt = (
-                "Phase-based diagnosis JSON (already evaluated by thresholds):\n"
-                f"{json.dumps(diagnosis_by_phase, ensure_ascii=False)}\n\n"
-                f"Side: {side}, Club: {club_key or 'unknown'}\n"
-                "Return:\n- summary: 1-2 sentences\n- actions: bullet points (<=3)"
-            )
-
-        messages: List[Message] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-        try:
-            llm_text = _llm.generate(
-                messages,
-                provider=llm_provider,
-                model=(llm_model or settings.LLM_DEFAULT_MODEL),
-                temperature=settings.LLM_TEMPERATURE_DEFAULT,
-                max_tokens=settings.LLM_MAX_TOKENS_DEFAULT,
-                timeout=90.0,
-                api_key_override=llm_api_key,
-                extra=delegate_extra,
-            )
-        except Exception as e:
-            logger.warning(f"[LLM] failed: {e}")
-            llm_text = "[LLM unavailable]"
+            logger.warning(f"[LLM] gateway call failed: {e}")
+            feedback = f"Error: LLM Gateway call failed ({e})"
 
     # 7) 응답 조립
     detected = len(landmarks)
@@ -271,44 +190,40 @@ def analyze_swing(
     except Exception as e:
         logger.debug(f"[LOG] write failed: {e}")
 
-    result["feedback"] = {
-        "summary": llm_text,
-        "provider": provider_used,
-        "model": (llm_model or settings.LLM_DEFAULT_MODEL),
-    }
+    if feedback:
+        result["feedback"] = feedback
 
     return result
 
 
-def _map_to_delegate(
-    provider: str, extra: Dict[str, any]
-) -> Tuple[str, Dict[str, any]]:
-    """
-    Router로부터 받은 provider/vendor를 Delegate가 이해하는 형태로 어댑트.
-    - "gateway": 게이트웨이로 포워딩 (vendor는 extra["vendor"]에 포함되어 들어옴)
-    - "compat" : OpenAI-호환 REST (base_url/api_key 필요)
-    - "openai":  SDK 경유
-    - 그 외     : gateway로 폴백
-    """
-    vendor = extra.get("vendor", "openai")
-    if provider == "gateway":
-        return "gateway", {"vendor": vendor, **extra}
-    if provider == "compat":
-        return "compat", {"vendor": vendor, **extra}
-    if provider == "openai":
-        return "openai", {**extra}
-    return "gateway", {"vendor": vendor, **extra}
+# 사용하는 DTO 변환 함수이므로 반드시 유지
+def _map_to_delegate_dto(
+        phases: Dict[str, int],
+        phase_metrics: Dict[str, Dict[str, float]],
+        diagnosis_by_phase: Dict[str, Any],
+        swing_id: str,
+        side: str,
+        club: str,
+) -> dict:
+    analysis_data = {
+        "swing_id": swing_id,
+        "side": side,
+        "club": club,
+        "phases": phases,
+        "phase_metrics": phase_metrics,
+        "diagnosis_by_phase": diagnosis_by_phase,
+    }
+
+    return analysis_data
 
 
 # s3 도입시 사용할 service 단 코드
 def analyze_from_url(
-    s3_url: str,
-    side: str = "right",
-    min_vis: float = 0.5,
-    norm_mode: NormMode = NormMode.auto,
-    llm_provider: str = settings.LLM_DEFAULT_PROVIDER,
-    llm_model: Optional[str] = None,
-    llm_api_key: Optional[str] = None,
+        s3_url: str,
+        side: str = "right",
+        min_vis: float = 0.5,
+        norm_mode: NormMode = NormMode.auto,
+        llm_config: Optional[dict] = None
 ) -> dict:
     """S3/HTTP 동영상 다운로드 후 동일 파이프라인 수행"""
     downloads = settings.DOWNLOADS_DIR
@@ -326,9 +241,7 @@ def analyze_from_url(
         side=side,
         min_vis=min_vis,
         norm_mode=norm_mode,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        llm_api_key=llm_api_key,
+        llm_config=llm_config
     )
 
 
@@ -341,52 +254,11 @@ def _infer_metrics_from_phase(phase_metrics: Dict[str, Dict[str, float]]) -> lis
     return sorted(keys)
 
 
-# 런타임 QC + 폴백 (bins 스키마 기준)
-def _has_metric_block_like(d: dict) -> bool:
-    """말단에 settings.THRESH_REQUIRED_KEYS 구조를 만족하는 블록이 존재하는지 검사"""
-    if not isinstance(d, dict):
-        return False
-    if REQUIRED_KEYS.issubset(d.keys()):
-        return True
-    for v in d.values():
-        if isinstance(v, dict) and _has_metric_block_like(v):
-            return True
-    return False
-
-
-def _is_thresholds_usable(data: dict) -> bool:
-    """가벼운 런타임 QC: empty/잘못된 bins/음수 n 등 최소한의 체크"""
-    if not isinstance(data, dict) or not data:
-        return False
-    if not _has_metric_block_like(data):
-        return False
-
-    ok_bins = False
-    ok_n = False
-
-    def _walk(d: dict):
-        nonlocal ok_bins, ok_n
-        for _, v in d.items():
-            if isinstance(v, dict) and REQUIRED_KEYS.issubset(v.keys()):
-                bins = v.get("bins", [])
-                if isinstance(bins, list) and len(bins) >= 2:
-                    if all(isinstance(b, (int, float)) for b in bins):
-                        if all(bins[i] >= bins[i - 1] for i in range(1, len(bins))):
-                            ok_bins = True
-                n = v.get("n", None)
-                if isinstance(n, int) and n >= 0:
-                    ok_n = True
-            elif isinstance(v, dict):
-                _walk(v)
-
-    _walk(data)
-    return ok_bins and ok_n
-
-
 def _recent_threshold_candidates() -> list[Path]:
     """CONFIG_DIR 아래 *_thresholds.json 중 current가 가리키는 실제 파일을 제외하고 최신순으로 반환"""
     base = settings.CONFIG_DIR
     current = base / "thresholds_current.json"
+
     try:
         current_real = current.resolve(strict=True) if current.exists() else None
     except Exception:
@@ -395,9 +267,11 @@ def _recent_threshold_candidates() -> list[Path]:
     pattern = str(base / "*_thresholds.json")
     paths = [Path(p) for p in glob.glob(pattern)]
     paths = [p for p in paths if p.is_file()]
+
     if current_real:
         paths = [p for p in paths if p.resolve() != current_real]
     paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
     return paths
 
 
@@ -425,25 +299,34 @@ def _load_thresholds(by: Optional[str] = None) -> dict:
       - by=club:   { "iron": {...}, "driver": {...}, ... }
       - by=overall:{ "overall": {...} }
     """
+    # 1. resource_finder를 통해 올바른 thresholds 파일 경로 탐색
     path = rf.thresholds_path()
     data = {}
+
+    if not path or not path.exists():
+        logger.warning(f"[THRESH] No thresholds file found by resource_finder (path: {path}).")
+        return {}
 
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception as e:
         logger.warning(f"[THRESH] failed to load current {path}: {e}")
 
+    # 2. utils의 표준 QC 함수 사용
     if qc_thresholds_usable(data, REQUIRED_KEYS):
         return _by_view(data, by)
 
     logger.warning("[THRESH] current unusable. trying recent archives...")
 
+    # 3. QC 실패 시 아카이브에서 최신본 탐색 (기존 로직 유지)
     for cand in _recent_threshold_candidates():
         try:
             cand_data = json.loads(cand.read_text(encoding="utf-8"))
         except Exception as e:
             logger.warning(f"[THRESH] skip {cand.name}: load error {e}")
             continue
+
+        # 3-1. utils의 표준 QC 함수 사용
         if qc_thresholds_usable(cand_data, REQUIRED_KEYS):
             logger.info(f"[THRESH] fallback -> {cand.name}")
             return _by_view(cand_data, by)
@@ -454,7 +337,7 @@ def _load_thresholds(by: Optional[str] = None) -> dict:
 
 # bins → min / max 어댑트 (룰 호환)
 def _range_from_bins(
-    block: dict, qlow: float, qhigh: float
+        block: dict, qlow: float, qhigh: float
 ) -> Optional[Tuple[float, float]]:
     """bins 엣지를 퍼센타일 구간으로 변환 (settings.THRESH_QLOW/HIGH 사용)"""
     if not isinstance(block, dict) or not REQUIRED_KEYS.issubset(block.keys()):
