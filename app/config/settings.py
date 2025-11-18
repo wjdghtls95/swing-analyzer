@@ -23,8 +23,8 @@ def find_project_root() -> Path:
     cur = Path(__file__).resolve()
     for parent in cur.parents:
         if any(
-            (parent / m).exists()
-            for m in (".git", "pyproject.toml", "requirements.txt")
+                (parent / m).exists()
+                for m in (".git", "pyproject.toml", "requirements.txt")
         ):
             return parent
     env_root = os.getenv("BASE_DIR")
@@ -99,13 +99,11 @@ class Settings:
         "THRESH_PHASES",
         ["P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"],
     )
-    THRESH_REQUIRED_KEYS = env_list(  # service에서 사용하던 REQUIRED_KEYS 이동
+    THRESH_REQUIRED_KEYS = env_list(
         "THRESH_REQUIRED_KEYS",
         ["bins", "mean", "std", "n"],
     )
-    THRESH_QLOW: float = float(
-        os.getenv("THRESH_QLOW", "0.1")
-    )  # bins→range 하한 퍼센타일
+    THRESH_QLOW: float = float(os.getenv("THRESH_QLOW", "0.1"))  # bins→range 하한 퍼센타일
     THRESH_QHIGH: float = float(
         os.getenv("THRESH_QHIGH", "0.9")
     )  # bins→range 상한 퍼센타일
@@ -136,24 +134,18 @@ class Settings:
     # LLM 설정
     LLM_PROVIDERS = env_list("LLM_PROVIDERS", ["openai", "mcp-openai", "noop"])
     LLM_DEFAULT_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
-    LLM_DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "gpt-5")
+    LLM_DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     LLM_FALLBACK_MODELS = env_list("LLM_FALLBACK_MODELS", ["gpt-4o-mini"])  # 체인 순서
     LLM_TEMPERATURE_DEFAULT: float = float(os.getenv("LLM_TEMPERATURE_DEFAULT", "0.4"))
     LLM_MAX_TOKENS_DEFAULT: int = int(os.getenv("LLM_MAX_TOKENS_DEFAULT", "100"))
-
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 
-    # 경량 게이트웨이 연결 (헤더 인증)
-    LLM_GATEWAY_ENDPOINT: str = os.getenv(
-        "LLM_GATEWAY_ENDPOINT", "http://localhost:3030/chat"
-    )
-    LLM_GATEWAY_KEY: str = os.getenv("LLM_GATEWAY_KEY", "dev-key")
+    # ── LLM / Internal Communication ──────────────────────
+    # 내부 통신용 키 (Platform, Gateway와 일치해야 함)
+    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "my-super-secret-internal-key")
 
-    # NestJS 게이트웨이의 /chat 엔드포인트 주소
-    NEST_GATEWAY_CHAT_URL: str = os.environ.get("NEST_GATEWAY_CHAT_URL", "http://localhost:3000/chat")
-
-    # NestJS 게이트웨이 인증을 위한 내부 API 키
-    NEST_INTERNAL_API_KEY: str = os.environ.get("NEST_INTERNAL_API_KEY", "your-secret-internal-api-key")
+    # LLM Gateway 주소 (기본값: NestJS Gateway 포트 3030)
+    LLM_GATEWAY_URL: str = os.getenv("LLM_GATEWAY_URL", "http://localhost:3030")
 
     # ── 명시적 파일/데이터셋 경로(선택) ───────────────────
     THRESHOLDS_FILE: Optional[str] = os.getenv("THRESHOLDS_FILE")

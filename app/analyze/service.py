@@ -18,16 +18,15 @@ from app.analyze.diagnosis import build_phase_diagnosis
 
 from app.config.settings import settings
 
-from app.llm.client import DelegateLLMClient
+from app.llm.client import LLMGatewayClient
 
 from app.utils.resource_finder import rf
-from app.utils.types.types import Message
 from app.utils.thresholds_utils import (
     qc_thresholds_usable,
     adapt_bins_to_ranges,
 )
 
-_llm = DelegateLLMClient()
+_llm = LLMGatewayClient()
 
 # ---------- 로거 ----------
 logger = logging.getLogger(__name__)
@@ -60,7 +59,7 @@ def analyze_swing(
     llm_config = llm_config or {}
     llm_provider = llm_config.get('provider')
 
-    # 이 llm_extra가 (플로우 6번) 게이트웨이로 전달될 "옵션"입니다.
+    # 이 llm_extra가 (플로우 6번) llm gateway로 전달될 옵션
     llm_extra = {k: v for k, v in llm_config.items() if k != "provider"}
 
     # 1) 전처리 (영상 표준화)
@@ -138,12 +137,12 @@ def analyze_swing(
     if llm_provider == 'gateway':
         try:
             analysis_data = _map_to_delegate_dto(
+                swing_id=os.path.basename(file_path).split("_")[0],
+                side=side,
+                club=club_key,
                 phases=phases,
                 phase_metrics=phase_metrics,
                 diagnosis_by_phase=diagnosis_by_phase,
-                swing_id=os.path.basename(file_path).split("_")[0],
-                side=side,
-                club=club_key
             )
 
             feedback = _llm.chat_summary_gateway(
