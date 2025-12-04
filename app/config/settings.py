@@ -7,11 +7,10 @@ from dotenv import load_dotenv
 
 # helpers
 from app.config.env_utils import env_bool, env_path, env_list
-from app.analyze.constants import (
-    DEFAULT_VIDEO_FPS,
-    DEFAULT_VIDEO_HEIGHT,
-    DEFAULT_VIDEO_MIRROR,
-)
+
+DEFAULT_VIDEO_FPS=60
+DEFAULT_VIDEO_HEIGHT=720
+DEFAULT_VIDEO_MIRROR=False
 
 
 # ─────────────────────────────────────────────────────────

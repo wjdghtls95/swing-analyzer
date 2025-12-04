@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import TypedDict, Literal, Optional, Dict, Any, List
+
+from typing import TypedDict, Literal, Optional, Dict, Any
+
 from pydantic import BaseModel, Field
 
 # LLM 메시지 역할(문자열 리터럴 유니온)

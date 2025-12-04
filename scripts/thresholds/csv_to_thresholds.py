@@ -1,4 +1,3 @@
-# scripts/thresholds/csv_to_thresholds.py
 from __future__ import annotations
 import argparse, json
 from pathlib import Path

@@ -95,7 +95,7 @@ const aiResponse = await this.httpService.post(
 
 ### 3️⃣ FastAPI(여기)에서 분석
 ```python
-# app/analyze/service.py
+# app/analyze/services.py
 def analyze_swing(file_path, side, club):
     # 1. 전처리
     preprocessed = preprocess_video(file_path)

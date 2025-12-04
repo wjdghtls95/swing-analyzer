@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 
 from app.config.settings import settings
-from app.utils.resource_finder import rf
 
 
 def main():

@@ -1,7 +1,4 @@
 # tests/test_thresholds.py
-import importlib
-import types
-
 
 def test_diagnosis_from_thresholds(monkeypatch):
     """

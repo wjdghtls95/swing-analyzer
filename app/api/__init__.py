@@ -1,5 +1,7 @@
+import importlib
+import pkgutil
+
 from fastapi import APIRouter, FastAPI
-import importlib, pkgutil, inspect
 
 # 이 패키지(root)
 PACKAGE_NAME = __name__
