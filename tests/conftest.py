@@ -86,8 +86,8 @@ def mock_video_preprocessor():
     """Mock VideoPreprocessor"""
     mock = Mock()
     mock.process.return_value = (
-        np.random.rand(60, 720, 1280, 3),  # 60 frames
-        Mock(fps=60, width=1280, height=720, total_frames=60)
+        np.random.rand(10, 64, 64, 3),  # 작은 크기: 10 frames, 64x64
+        Mock(fps=60, width=1280, height=720, total_frames=10)
     )
     return mock
 
@@ -99,7 +99,7 @@ def mock_pose_extractor():
     mock.extract.return_value = Mock(
         poses=[
             [{"x": 0.5, "y": 0.5, "z": 0.0, "visibility": 1.0} for _ in range(33)]
-            for _ in range(60)
+            for _ in range(10)  # 10 frames만
         ],
         fps=60
     )
@@ -112,10 +112,10 @@ def mock_angle_calculator():
     mock = Mock()
     mock.calculate.return_value = Mock(
         angles={
-            "left_elbow": [140.0] * 60,
-            "right_elbow": [140.0] * 60,
-            "left_knee": [160.0] * 60,
-            "right_knee": [160.0] * 60,
+            "left_elbow": [140.0] * 10,  # 10 frames
+            "right_elbow": [140.0] * 10,
+            "left_knee": [160.0] * 10,
+            "right_knee": [160.0] * 10,
         }
     )
     return mock

@@ -48,9 +48,10 @@ class AnalyzeSwingApiRequest(BaseModel):
 
     @validator("llm_model")
     def validate_llm_model(cls, v, values):
-        """llm_provider가 있으면 llm_model도 필수"""
-        if values.get("llm_provider") and not v:
-            raise ValueError("llm_provider가 지정되면 llm_model도 필수입니다")
+        """llm_provider가 openai/anthropic면 llm_model도 필수"""
+        provider = values.get("llm_provider")
+        if provider and provider != "noop" and not v:
+            raise ValueError("llm_provider가 openai/anthropic이면 llm_model도 필수입니다")
         return v
 
     class Config:
