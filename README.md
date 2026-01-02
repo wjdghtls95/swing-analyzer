@@ -186,18 +186,7 @@ swing-analyzer/
 └── docker-compose.yml
 
 ```
-
 ---
-
-## 📚 문서
-
-- [**API 명세**](https://www.genspark.ai/docs/api.md) - 엔드포인트 및 요청/응답 스키마
-- [**개발 가이드**](https://www.genspark.ai/docs/dev_guide.md) - 로컬 개발 환경 설정
-- [**모듈 레퍼런스**](https://www.genspark.ai/docs/module_reference.md) - 각 모듈의 함수 및 클래스
-- [**임계값 설정**](https://www.genspark.ai/docs/thresholds.md) - 각도 임계값 및 Phase Detection 파라미터
-
----
-
 ## 🔬 주요 기능 상세
 
 ### 1. Pose Estimation
