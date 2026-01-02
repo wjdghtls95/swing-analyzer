@@ -5,10 +5,31 @@ services:
     container_name: swing-analyzer
     build:
       context: .
-      dockerfile: swing-analyzer.DockerFile
+      dockerfile: Dockerfile
     ports:
-      - "8000:8000"
-    restart: always
-    env_file:
-      - .env.dev
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+      - "${FASTAPI_PORT:-8000}:8000"
+    restart: unless-stopped
+    environment:
+      - ENV=${ENV:-dev}
+      - FASTAPI_PORT=8000
+      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LLM_PROVIDER=${LLM_PROVIDER:-noop}
+      - LLM_GATEWAY_URL=${LLM_GATEWAY_URL:-http://host.docker.internal:3030}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./app/config:/app/app/config:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - swing-analyzer-network
+
+networks:
+  swing-analyzer-network:
+    driver: bridge

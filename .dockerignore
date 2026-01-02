@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Virtual environments
+env/
+venv/
+.venv/
+ENV/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data & Outputs
+data/
+uploads/
+*.parquet
+*.csv
+*.mp4
+*.avi
+*.mov
+
+# Notebooks
+notebooks/
+.ipynb_checkpoints/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker
+Dockerfile.backup
+.dockerignore
+docker-compose.yml
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+build/
+dist/
+*.spec
