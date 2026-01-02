@@ -82,6 +82,63 @@ curl -X POST "http://localhost:8000/analyze" \
 
 ---
 
+## 🔧 Configuration
+
+### Environment Variables
+
+1. **Copy the example file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your configuration:**
+
+#### Required Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `FASTAPI_PORT` | API server port | `8000` |
+| `INTERNAL_API_KEY` | Internal API authentication key | `my-secret-key` |
+
+#### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEBUG_MODE` | Enable debug logging | `false` |
+| `VIDEO_FPS` | Video normalization FPS | `60` |
+| `VIDEO_HEIGHT` | Video normalization height | `720` |
+| `LLM_PROVIDER` | LLM provider (noop/openai) | `noop` |
+| `OPENAI_API_KEY` | OpenAI API key (if using openai) | - |
+| `LLM_GATEWAY_URL` | LLM Gateway endpoint | `http://localhost:3030` |
+
+#### LLM Providers
+
+- **`noop`**: No LLM (테스트용, 무과금)
+- **`openai`**: OpenAI API (과금)
+- **`mcp-openai`**: OpenAI with MCP (Model Context Protocol)
+
+**Example `.env`:**
+```env
+ENV=dev
+FASTAPI_PORT=8000
+DEBUG_MODE=true
+INTERNAL_API_KEY=your-secret-key-here
+LLM_PROVIDER=noop
+```
+
+**For production with OpenAI:**
+```env
+ENV=production
+FASTAPI_PORT=8000
+DEBUG_MODE=false
+INTERNAL_API_KEY=your-production-secret-key
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-openai-api-key-here
+LLM_GATEWAY_URL=http://platform:3030
+```
+
+---
+
 ## 📈 분석 결과 예시
 
 ```json
