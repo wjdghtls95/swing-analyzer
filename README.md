@@ -230,4 +230,91 @@ pytest
 pytest --cov=app tests/
 
 ```
+
+---
+
+## 🐳 Docker Deployment
+
+### Build and Run
+
+```bash
+# 1. 환경 변수 설정
+cp .env.example .env
+# Edit .env with your configuration
+
+# 2. 빌드 및 실행
+docker-compose up --build -d
+
+# 3. Health Check
+curl http://localhost:8000/health
+curl http://localhost:8000/health/detailed
+
+# 4. 로그 확인
+docker-compose logs -f
+
+# 5. 정지
+docker-compose down
+```
+
+### Docker Image Size Optimization
+
+| Version | Size | Optimization |
+|---------|------|--------------|
+| **Before** | ~1.2GB | Single-stage build |
+| **After** | ~650MB | Multi-stage build |
+| **Improvement** | 🚀 **46% reduction** | Virtual environment isolation |
+
+**Key Optimizations:**
+- ✅ Multi-stage build (builder + runtime)
+- ✅ Virtual environment isolation
+- ✅ Minimal runtime dependencies
+- ✅ Non-root user (security)
+- ✅ Layer caching optimization
+
+### Health Checks
+
+| Endpoint | Purpose | Response Time |
+|----------|---------|---------------|
+| `/health` | Basic health check (Docker healthcheck) | <10ms |
+| `/health/detailed` | System metrics (memory, CPU, disk) | ~50ms |
+| `/openai/health` | LLM provider connectivity | ~2s |
+
+**Example `/health/detailed` Response:**
+```json
+{
+  "status": "healthy",
+  "service": "swing-analyzer",
+  "version": "1.0.0",
+  "timestamp": "2026-01-02T06:00:00.000000",
+  "system": {
+    "memory": {
+      "total_gb": 16.0,
+      "available_gb": 8.5,
+      "used_percent": 46.8
+    },
+    "disk": {
+      "total_gb": 500.0,
+      "free_gb": 250.0,
+      "used_percent": 50.0
+    },
+    "cpu": {
+      "usage_percent": 12.5,
+      "count": 8
+    }
+  },
+  "directories": {
+    "uploads": true,
+    "data": true,
+    "logs": true,
+    "config": true
+  },
+  "environment": {
+    "debug_mode": true,
+    "llm_provider": "noop",
+    "env": "dev",
+    "fastapi_port": 8000
+  }
+}
+```
+
 ---
