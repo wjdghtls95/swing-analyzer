@@ -77,48 +77,5 @@ async def analyze_swing(
             os.remove(file_path)
             logger.info(f"🗑️ 임시 파일 삭제: {file_path}")
 
-# @router.post("", response_model=AnalyzeSwingResponse)
-# async def analyze(
-#     file: UploadFile = File(..., description="분석할 스윙 영상 (mp4 등)"),
-#     req: AnalyzeSwingApiRequest = Depends(AnalyzeSwingApiRequest.as_form),
-#     _: bool = Depends(verify_api_key),
-# ) -> AnalyzeSwingResponse:
-#     upload_dir = settings.UPLOADS_DIR
-#     os.makedirs(upload_dir, exist_ok=True)
-#
-#     file_path = os.path.join(upload_dir, file.filename)
-#     try:
-#         # 파일 저장
-#         with open(file_path, "wb") as f:
-#             content = await file.read()
-#             f.write(content)
-#
-#
-#
-#         # Service용 Request DTO
-#         request = AnalyzeSwingRequest(
-#             file_path=file_path,
-#             user_id=req.user_id or "anonymous",
-#             club=req.club,
-#             swing_direction=req.swing_direction,
-#             visibility_threshold=req.visibility_threshold,
-#             normalize_mode=req.normalize_mode,
-#             llm_provider=req.llm_provider,
-#             llm_model=req.llm_model,
-#         )
-#
-#         service = get_swing_analysis_service()
-#
-#         result = await service.analyze(service_request)
-#
-#         return result
-#
-#     except Exception as e:
-#         logger.exception("❌ 스윙 분석 중 오류 발생")
-#         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
-#
-#     finally:
-#         if os.path.exists(file_path):
-#             os.remove(file_path)
 
 ROUTER = [router]
