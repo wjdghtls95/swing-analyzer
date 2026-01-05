@@ -2,6 +2,7 @@ import httpx
 from typing import Optional
 import logging
 from app.schemas.diagnosis_dto import DiagnosisResult
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -197,3 +198,108 @@ Requirements:
             "2. llm_model을 'gpt-4o-mini' 등으로 설정",
             "3. Execute 실행"
         ])
+        
+        return "\n".join(feedback_lines)
+
+    def generate_text(
+        self,
+        user_prompt: str,
+        system_prompt: str = "",
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        timeout: float = 30.0
+    ) -> str:
+        """
+        일반적인 텍스트 생성 (보고서 등)
+        
+        Args:
+            user_prompt: 사용자 프롬프트
+            system_prompt: 시스템 프롬프트
+            model: 모델명 (없으면 self.model 사용)
+            temperature: 온도
+            max_tokens: 최대 토큰
+            timeout: 타임아웃
+            
+        Returns:
+            생성된 텍스트
+        """
+        # noop 모드: mock 응답
+        if self.provider == "noop":
+            logger.info("Noop 모드: Mock 텍스트 반환")
+            return self._generate_mock_text(user_prompt)
+        
+        # LLM Gateway 호출
+        try:
+            response = httpx.post(
+                f"{self.gateway_url}/api/chat",
+                json={
+                    "provider": self.provider,
+                    "model": model or self.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens
+                },
+                headers={"X-API-Key": self.api_key} if self.api_key else {},
+                timeout=timeout
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get("content", "텍스트 생성 실패")
+        
+        except httpx.HTTPError as e:
+            logger.error(f"LLM Gateway 호출 실패: {e}")
+            return self._generate_fallback_text(user_prompt)
+    
+    def _generate_mock_text(self, user_prompt: str) -> str:
+        """Noop 모드용 Mock 텍스트"""
+        return f"""[테스트 모드 - NoOp LLM]
+
+이것은 실제 LLM API를 호출하지 않고 반환되는 Mock 응답입니다.
+과금이 발생하지 않습니다.
+
+입력된 프롬프트:
+{user_prompt[:200]}...
+
+실제 AI 응답을 받으려면 llm_provider를 'openai' 또는 'anthropic'으로 설정하세요.
+"""
+    
+    def _generate_fallback_text(self, user_prompt: str) -> str:
+        """LLM 실패 시 Fallback 텍스트"""
+        return f"""[LLM 서비스 일시적 오류]
+
+죄송합니다. AI 서비스 연결에 문제가 발생했습니다.
+잠시 후 다시 시도해주세요.
+
+입력된 프롬프트: {user_prompt[:100]}...
+"""
+
+
+def get_llm_client(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    gateway_url: Optional[str] = None,
+    api_key: Optional[str] = None
+) -> LLMGatewayClient:
+    """
+    LLM 클라이언트 팩토리 함수
+    
+    Args:
+        provider: LLM 제공자 (없으면 settings에서 가져옴)
+        model: 모델명 (없으면 settings에서 가져옴)
+        gateway_url: Gateway URL (없으면 settings에서 가져옴)
+        api_key: API 키 (없으면 settings에서 가져옴)
+        
+    Returns:
+        LLMGatewayClient 인스턴스
+    """
+    return LLMGatewayClient(
+        gateway_url=gateway_url or settings.LLM_GATEWAY_URL,
+        provider=provider or settings.LLM_DEFAULT_PROVIDER,
+        model=model or settings.LLM_DEFAULT_MODEL,
+        api_key=api_key or settings.OPENAI_API_KEY,
+        timeout=30
+    )
